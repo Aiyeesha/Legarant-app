@@ -2,5 +2,16 @@
   "name": "legarant-axg-crm-sync",
   "version": "1.0.0",
   "main": "server.js",
+<<<<<<< HEAD
   "scripts": { "start": "node server.js" }
+=======
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "express": "^5.1.0",
+    "pg": "^8.16.3"
+  }
+>>>>>>> 18536e2 (Initial commit - SOCMOB API)
 }
