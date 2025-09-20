@@ -73,4 +73,43 @@ app.get('/account/:externalId/contacts', async (req, res) => {
 });
 
 
+// --- GET /contract/:axgContractId ---
+app.get('/contract/:axgContractId', async (req, res) => {
+  const { axgContractId } = req.params;
+
+  // requête SQL: lecture dans le schéma "salesforce" d'Heroku Connect
+  const sql = `
+    SELECT
+      sfid,
+      axg_contract_id__c,
+      name,
+      accountid,
+      status,
+      startdate,
+      enddate,
+      activateddate,
+      contractnumber,
+      isdeleted
+    FROM salesforce.contract
+    WHERE axg_contract_id__c = $1
+    LIMIT 1
+  `;
+
+  try {
+    const { rows } = await pool.query(sql, [axgContractId]);
+
+    if (!rows.length || rows[0].isdeleted === true) {
+      return res.status(404).json({ error: 'Contract not found' });
+    }
+
+    // on retire le champ interne isdeleted de la réponse
+    const { isdeleted, ...payload } = rows[0];
+    return res.json(payload);
+  } catch (e) {
+    console.error('GET /contract error', e);
+    return res.status(500).json({ error: 'Database error' });
+  }
+});
+
+
 app.listen(port, () => console.log(`SOCMOB API running on ${port}`));
