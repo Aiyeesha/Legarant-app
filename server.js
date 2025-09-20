@@ -34,4 +34,43 @@ app.get('/contact/:email', async (req, res) => {
   }
 });
 
+
+// --- GET /account/:externalId/contacts?active=true ---
+app.get('/account/:externalId/contacts', async (req, res) => {
+  const { externalId } = req.params;
+  const { active } = req.query;
+
+  try {
+    const params = [externalId];
+    let where = `a.axg_account_id__c = $1`;
+
+    // filtre optionnel sur Active__c
+    if (active === 'true' || active === 'false') {
+      params.push(active === 'true');
+      where += ` AND c.active__c = $${params.length}`;
+    }
+
+    const sql = `
+      SELECT
+        c.sfid,
+        c.firstname,
+        c.lastname,
+        c.email,
+        c.active__c,
+        c.axg_contact_id__c
+      FROM salesforce.contact c
+      JOIN salesforce.account a ON c.accountid = a.sfid
+      WHERE ${where}
+      ORDER BY c.lastname NULLS LAST, c.firstname NULLS LAST
+    `;
+
+    const { rows } = await pool.query(sql, params);
+    res.json(rows);               // [] si aucun résultat
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+
 app.listen(port, () => console.log(`SOCMOB API running on ${port}`));
