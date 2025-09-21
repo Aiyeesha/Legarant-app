@@ -14,7 +14,6 @@ $('#btnHealth').addEventListener('click', async () => {
 $('#formAccount').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  // Checkbox -> boolean
   const body = Object.fromEntries(fd.entries());
   body.active = fd.get('active') === 'on';
   Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
@@ -25,7 +24,7 @@ $('#formAccount').addEventListener('submit', async (e) => {
       headers: { 'Content-Type':'application/json' },
       body: JSON.stringify(body)
     });
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outAccount'), { status: r.status, ...json });
   } catch (e) { show($('#outAccount'), { error: e.message }); }
 });
@@ -41,10 +40,11 @@ $('#formRegister').addEventListener('submit', async (e) => {
       headers: { 'Content-Type':'application/json' },
       body: JSON.stringify(body)
     });
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outRegister'), { status: r.status, ...json });
   } catch (e) { show($('#outRegister'), { error: e.message }); }
 });
+
 
 /* Lookup contact by email */
 $('#btnLookup').addEventListener('click', async () => {
@@ -107,4 +107,65 @@ $('#btnOrders').addEventListener('click', async () => {
     const json = await r.json();
     show($('#outOrders'), json);
   } catch (e) { show($('#outOrders'), { error: e.message }); }
+});
+
+/* ---------- PATCH CONTACT ---------- */
+document.querySelector('#formPatchContact').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const externalId = fd.get('externalId')?.trim();
+  if (!externalId) return show($('#outPatchContact'), { error: 'External Id requis' });
+
+  const allowed = [
+    'FirstName','LastName','Email','Phone','MobilePhone',
+    'MailingStreet','MailingCity','MailingPostalCode','MailingCountry',
+    'Active__c','Title','Department'
+  ];
+  const body = {};
+  for (const k of allowed) {
+    const v = fd.get(k);
+    if (v !== null && v !== '') body[k] = (k === 'Active__c' ? (v === 'true') : v);
+  }
+  if (body.Email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.Email)) {
+    return show($('#outPatchContact'), { error: 'Email invalide' });
+  }
+
+  try {
+    const r = await fetch(`/contact/${encodeURIComponent(externalId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await r.json().catch(() => ({}));
+    show($('#outPatchContact'), { status: r.status, ...json, sent: body });
+  } catch (e) {
+    show($('#outPatchContact'), { error: e.message });
+  }
+});
+
+/* ---------- PATCH ACCOUNT ---------- */
+document.querySelector('#formPatchAccount').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const externalId = fd.get('externalId')?.trim();
+  if (!externalId) return show($('#outPatchAccount'), { error: 'External Id requis' });
+
+  const allowed = ['Name','Phone','BillingStreet','BillingCity','BillingPostalCode','BillingCountry','Active__c'];
+  const body = {};
+  for (const k of allowed) {
+    const v = fd.get(k);
+    if (v !== null && v !== '') body[k] = (k === 'Active__c' ? (v === 'true') : v);
+  }
+
+  try {
+    const r = await fetch(`/account/${encodeURIComponent(externalId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await r.json().catch(() => ({}));
+    show($('#outPatchAccount'), { status: r.status, ...json, sent: body });
+  } catch (e) {
+    show($('#outPatchAccount'), { error: e.message });
+  }
 });

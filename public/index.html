@@ -19,7 +19,7 @@
       <pre id="outHealth" class="out"></pre>
     </section>
 
-    <section class="card">
+   <section class="card">
       <h2>Créer un Compte (POST /account)</h2>
       <form id="formAccount">
         <div class="grid">
@@ -51,6 +51,67 @@
         <button type="submit">Créer le contact</button>
       </form>
       <pre id="outRegister" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Modifier un Contact (PATCH /contact/:externalId)</h2>
+      <form id="formPatchContact">
+        <div class="grid">
+          <label>External Id (AXG_Contact_Id__c)
+            <input name="externalId" placeholder="AXG-000001" required />
+          </label>
+
+          <label>FirstName <input name="FirstName" /></label>
+          <label>LastName <input name="LastName" /></label>
+          <label>Email <input type="email" name="Email" /></label>
+          <label>Phone <input name="Phone" /></label>
+          <label>MobilePhone <input name="MobilePhone" /></label>
+
+          <label>MailingStreet <input name="MailingStreet" /></label>
+          <label>MailingCity <input name="MailingCity" /></label>
+          <label>MailingPostalCode <input name="MailingPostalCode" /></label>
+          <label>MailingCountry <input name="MailingCountry" /></label>
+
+          <label>Title <input name="Title" /></label>
+          <label>Department <input name="Department" /></label>
+          <label>Active__c
+            <select name="Active__c">
+              <option value="">— inchangé —</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Mettre à jour le contact</button>
+      </form>
+      <pre id="outPatchContact" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Modifier un Account (PATCH /account/:externalId)</h2>
+      <form id="formPatchAccount">
+        <div class="grid">
+          <label>External Id (AXG_Account_Id__c)
+            <input name="externalId" placeholder="AXG-ACCT-10001" required />
+          </label>
+
+          <label>Name <input name="Name" /></label>
+          <label>Phone <input name="Phone" /></label>
+          <label>BillingStreet <input name="BillingStreet" /></label>
+          <label>BillingCity <input name="BillingCity" /></label>
+          <label>BillingPostalCode <input name="BillingPostalCode" /></label>
+          <label>BillingCountry <input name="BillingCountry" /></label>
+          <label>Active__c
+            <select name="Active__c">
+              <option value="">— inchangé —</option>
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Mettre à jour le compte</button>
+      </form>
+      <pre id="outPatchAccount" class="out"></pre>
     </section>
 
     <section class="card">

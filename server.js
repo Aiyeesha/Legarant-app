@@ -97,6 +97,141 @@ app.post('/register', async (req, res) => {
   }
 });
 
+
+// ---------- PATCH /contact/:externalId (partial update) ----------
+app.patch('/contact/:externalId', async (req, res) => {
+  const { externalId } = req.params;
+  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+
+  // Champs autorisés (côté SF, FLS/Validation Rules s’appliqueront aussi)
+  const allowed = [
+    'FirstName','LastName','Email','Phone','MobilePhone',
+    'MailingStreet','MailingCity','MailingPostalCode','MailingCountry',
+    'Active__c','Title','Department','AccountId'
+  ];
+
+  // Filtre le body aux seuls champs autorisés
+  const body = Object.fromEntries(
+    Object.entries(req.body || {}).filter(([k, v]) => allowed.includes(k) && v !== undefined)
+  );
+
+  // Validation simple
+  if (body.Email) {
+    const isEmail = s => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+    if (!isEmail(body.Email)) return res.status(400).json({ error: 'invalid_email' });
+  }
+
+  // Mapping API -> colonnes PG
+  const mapCol = {
+    FirstName: 'firstname',
+    LastName: 'lastname',
+    Email: 'email',
+    Phone: 'phone',
+    MobilePhone: 'mobilephone',
+    MailingStreet: 'mailingstreet',
+    MailingCity: 'mailingcity',
+    MailingPostalCode: 'mailingpostalcode',
+    MailingCountry: 'mailingcountry',
+    Active__c: 'active__c',
+    Title: 'title',
+    Department: 'department',
+    AccountId: 'accountid', // si tu souhaites rattacher/détacher un contact
+  };
+
+  const sets = [];
+  const params = [];
+  for (const [apiName, val] of Object.entries(body)) {
+    sets.push(`${mapCol[apiName]} = $${sets.length + 1}`);
+    params.push(val);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'no_updatable_fields' });
+
+  // WHERE par External Id
+  params.push(externalId);
+  const sql = `
+    UPDATE salesforce.contact
+       SET ${sets.join(', ')},
+           systemmodstamp = systemmodstamp
+     WHERE axg_contact_id__c = $${params.length}
+     RETURNING sfid, axg_contact_id__c, firstname, lastname, email,
+               phone, mobilephone, mailingcity, active__c, accountid
+  `;
+  try {
+    const r = await pool.query(sql, params);
+    if (!r.rowCount) return res.status(404).json({ error: 'contact_not_found' });
+    return res.json({ contact: r.rows[0] });
+  } catch (e) {
+    console.error('PATCH /contact error:', e);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
+// ---------- PATCH /account/:externalId (partial update) ----------
+app.patch('/account/:externalId', async (req, res) => {
+  const { externalId } = req.params;
+  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+
+  // Champs autorisés pour Account (complète si besoin)
+  const allowed = [
+    'Name','Phone','Website','Industry','NumberOfEmployees','AnnualRevenue',
+    'Type','Rating','AccountSource','Active__c',
+    'BillingStreet','BillingCity','BillingPostalCode','BillingCountry',
+    'ShippingStreet','ShippingCity','ShippingPostalCode','ShippingCountry'
+  ];
+
+  const body = Object.fromEntries(
+    Object.entries(req.body || {}).filter(([k, v]) => allowed.includes(k) && v !== undefined)
+  );
+  if (!Object.keys(body).length) return res.status(400).json({ error: 'no_updatable_fields' });
+
+  const mapCol = {
+    Name: 'name',
+    Phone: 'phone',
+    Website: 'website',
+    Industry: 'industry',
+    NumberOfEmployees: 'numberofemployees',
+    AnnualRevenue: 'annualrevenue',
+    Type: 'type',
+    Rating: 'rating',
+    AccountSource: 'accountsource',
+    Active__c: 'active__c',
+    BillingStreet: 'billingstreet',
+    BillingCity: 'billingcity',
+    BillingPostalCode: 'billingpostalcode',
+    BillingCountry: 'billingcountry',
+    ShippingStreet: 'shippingstreet',
+    ShippingCity: 'shippingcity',
+    ShippingPostalCode: 'shippingpostalcode',
+    ShippingCountry: 'shippingcountry',
+  };
+
+  const sets = [];
+  const params = [];
+  for (const [apiName, val] of Object.entries(body)) {
+    sets.push(`${mapCol[apiName]} = $${sets.length + 1}`);
+    params.push(val);
+  }
+
+  params.push(externalId);
+  const sql = `
+    UPDATE salesforce.account
+       SET ${sets.join(', ')},
+           systemmodstamp = systemmodstamp
+     WHERE axg_account_id__c = $${params.length}
+     RETURNING sfid, axg_account_id__c, name, phone, website, industry,
+               numberofemployees, annualrevenue, type, rating, accountsource, active__c
+  `;
+  try {
+    const r = await pool.query(sql, params);
+    if (!r.rowCount) return res.status(404).json({ error: 'account_not_found' });
+    return res.json({ account: r.rows[0] });
+  } catch (e) {
+    console.error('PATCH /account error:', e);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 /* 2) GET /accounts/:externalId — retrouver le compte par External Id */
 app.get('/accounts/:externalId', async (req, res) => {
   try {
