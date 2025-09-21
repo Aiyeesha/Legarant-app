@@ -1,4 +1,5 @@
 // server.js – SOCMOB API (Heroku)
+// server.js
 const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
@@ -6,9 +7,9 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ---- Middlewares ----
+// middlewares
 app.use(express.json({ limit: '512kb' }));
-app.use((req, res, next) => {
+app.use((req,res,next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email');
@@ -16,14 +17,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---- DB pool (Heroku Postgres via Heroku Connect) ----
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { require: true, rejectUnauthorized: false },
-});
+// DB (si tu l’utilises)
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { require: true, rejectUnauthorized: false }});
 
-// Santé
-app.get('/', (_req, res) => res.send('SOCMOB API: OK'));
+// ---- Static front
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+app.get('/', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
+
+// ---- Healthcheck (NE PAS utiliser '/')
+app.get('/health', (_req, res) => res.send('SOCMOB API: OK'));
 
 // ---------- Utilitaires ----------
 const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -357,13 +361,6 @@ app.get('/contract/:axgContractId', async (req, res) => {
     console.error('GET /contract DB error:', e);
     return res.status(500).json({ error: 'Database error' });
   }
-});
-
-// ---- Static front (LAISSE / pour le front) ----
-const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(publicDir, 'index.html'));
 });
 
 // ---- Boot ----
