@@ -35,7 +35,33 @@ const pick = (obj, allowed) => Object.fromEntries(
 );
 
 /* ---------- API ---------- */
-// 1) POST /register
+// POST /account  -> créer un compte sans contact
+app.post('/account', async (req, res) => {
+  try {
+    const { name, externalId, phone, billingCity, active = true } = req.body || {};
+    if (!name || !externalId) return res.status(400).json({ error: 'name_and_externalId_required' });
+
+    const dup = await pool.query(
+      'SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1',
+      [externalId]
+    );
+    if (dup.rowCount) return res.status(409).json({ error: 'account_exists', sfid: dup.rows[0].sfid });
+
+    const ins = await pool.query(
+      `INSERT INTO salesforce.account (name, axg_account_id__c, phone, billingcity, active__c)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING sfid, name, axg_account_id__c, active__c`,
+      [name, externalId, phone || null, billingCity || null, !!active]
+    );
+
+    res.status(201).json({ account: ins.rows[0], sync: 'pending' });
+  } catch (e) {
+    console.error('POST /account error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// POST /register  -> créer un contact (optionnellement rattaché via Account External Id)
 app.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, mobile, accountExternalId } = req.body || {};
@@ -58,7 +84,7 @@ app.post('/register', async (req, res) => {
     }
 
     const ins = await pool.query(
-      `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountname, accountid)
+      `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountid)
        VALUES ($1,$2,$3,$4,true,$5)
        RETURNING sfid, firstname, lastname, email, accountid`,
       [firstName || null, lastName || null, email, mobile || null, accountId]
@@ -70,6 +96,24 @@ app.post('/register', async (req, res) => {
     res.status(500).json({ error: 'server_error' });
   }
 });
+
+/* 2) GET /accounts/:externalId — retrouver le compte par External Id */
+app.get('/accounts/:externalId', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sfid, name, axg_account_id__c, phone, website, billingcity
+       FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
+      [req.params.externalId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('GET /accounts error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
 
 // 2) PUT /contact/:externalId
 app.put('/contact/:externalId', async (req, res) => {

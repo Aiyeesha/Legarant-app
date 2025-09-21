@@ -20,6 +20,23 @@
     </section>
 
     <section class="card">
+      <h2>Créer un Compte (POST /account)</h2>
+      <form id="formAccount">
+        <div class="grid">
+          <label>Account Name <input name="name" required /></label>
+          <label>External Id <input name="externalId" required placeholder="AXG-ACCT-10001" /></label>
+          <label>Téléphone <input name="phone" /></label>
+          <label>Billing City <input name="billingCity" /></label>
+          <label style="grid-column:1/-1">
+            <input type="checkbox" name="active" checked /> Actif
+          </label>
+        </div>
+        <button type="submit">Créer l’Account</button>
+      </form>
+      <pre id="outAccount" class="out"></pre>
+    </section>
+
+    <section class="card">
       <h2>Auto-inscription (POST /register)</h2>
       <form id="formRegister">
         <div class="grid">
@@ -27,9 +44,6 @@
           <label>Last Name <input name="lastName" required /></label>
           <label>Email <input type="email" name="email" required /></label>
           <label>Mobile <input name="mobile" /></label>
-          <label>Account Name (optionnel)
-            <input name="accountname" placeholder=" Lebensversicherung " />
-          </label>
           <label>Account External Id (optionnel)
             <input name="accountExternalId" placeholder="AXG-ACCT-10001" />
           </label>
@@ -90,7 +104,6 @@
       </div>
       <pre id="outOrders" class="out"></pre>
     </section>
-
   </main>
 
   <footer class="footer">
