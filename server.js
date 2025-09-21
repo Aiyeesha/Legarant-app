@@ -58,7 +58,7 @@ app.post('/register', async (req, res) => {
     }
 
     const ins = await pool.query(
-      `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountname, accountid)
+      `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountid)
        VALUES ($1,$2,$3,$4,true,$5)
        RETURNING sfid, firstname, lastname, email, accountid`,
       [firstName || null, lastName || null, email, mobile || null, accountId]
