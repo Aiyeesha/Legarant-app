@@ -1,28 +1,25 @@
 // server.js – SOCMOB API (Heroku)
-// Dépendances: express, pg  (package.json déjà ok)
-
 const express = require('express');
+const path = require('path');
 const { Pool } = require('pg');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ---- DB pool (Heroku Postgres via Heroku Connect) ----
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { require: true, rejectUnauthorized: false },
-});
-
 // ---- Middlewares ----
 app.use(express.json({ limit: '512kb' }));
-
-// (Optionnel) CORS basique pour tests web
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
+});
+
+// ---- DB pool (Heroku Postgres via Heroku Connect) ----
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { require: true, rejectUnauthorized: false },
 });
 
 // Santé
@@ -360,6 +357,13 @@ app.get('/contract/:axgContractId', async (req, res) => {
     console.error('GET /contract DB error:', e);
     return res.status(500).json({ error: 'Database error' });
   }
+});
+
+// ---- Static front (LAISSE / pour le front) ----
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
 });
 
 // ---- Boot ----
