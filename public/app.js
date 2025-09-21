@@ -45,14 +45,13 @@ $('#formRegister').addEventListener('submit', async (e) => {
   } catch (e) { show($('#outRegister'), { error: e.message }); }
 });
 
-
 /* Lookup contact by email */
 $('#btnLookup').addEventListener('click', async () => {
   const email = encodeURIComponent($('#emailLookup').value.trim());
   if (!email) return show($('#outLookup'), { error: 'Email requis' });
   try {
     const r = await fetch(`/contact/${email}`);
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outLookup'), { status: r.status, ...json });
   } catch (e) { show($('#outLookup'), { error: e.message }); }
 });
@@ -65,7 +64,7 @@ $('#btnAccContacts').addEventListener('click', async () => {
   const q = active ? `?active=${active}` : '';
   try {
     const r = await fetch(`/account/${encodeURIComponent(ext)}/contacts${q}`);
-    const json = await r.json();
+    const json = await r.json().catch(()=>([]));
     show($('#outAccContacts'), { count: Array.isArray(json) ? json.length : 0, items: json });
   } catch (e) { show($('#outAccContacts'), { error: e.message }); }
 });
@@ -76,7 +75,7 @@ $('#btnContract').addEventListener('click', async () => {
   if (!id) return show($('#outContract'), { error: 'External Id requis' });
   try {
     const r = await fetch(`/contract/${encodeURIComponent(id)}`);
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outContract'), { status: r.status, ...json });
   } catch (e) { show($('#outContract'), { error: e.message }); }
 });
@@ -90,7 +89,7 @@ $('#btnProducts').addEventListener('click', async () => {
   if (pb) params.set('pricebookName', pb);
   try {
     const r = await fetch(`/products?${params.toString()}`);
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outProducts'), json);
   } catch (e) { show($('#outProducts'), { error: e.message }); }
 });
@@ -104,7 +103,7 @@ $('#btnOrders').addEventListener('click', async () => {
   if (status) params.set('status', status);
   try {
     const r = await fetch(`/orders/${encodeURIComponent(acc)}?${params.toString()}`);
-    const json = await r.json();
+    const json = await r.json().catch(()=>({}));
     show($('#outOrders'), json);
   } catch (e) { show($('#outOrders'), { error: e.message }); }
 });
