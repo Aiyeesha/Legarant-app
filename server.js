@@ -71,6 +71,35 @@ app.post('/register', async (req, res) => {
   }
 });
 
+// POST /account  -> crée ou prépare un compte sans contact
+app.post('/account', async (req, res) => {
+  try {
+    const { name, externalId, phone, billingCity, active = true } = req.body || {};
+    if (!name || !externalId) return res.status(400).json({ error: 'name_and_externalId_required' });
+
+    // anti-doublon rapide sur l’External Id
+    const dup = await pool.query(
+      'SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1',
+      [externalId]
+    );
+    if (dup.rowCount) return res.status(409).json({ error: 'account_exists', sfid: dup.rows[0].sfid });
+
+    const ins = await pool.query(
+      `INSERT INTO salesforce.account (name, axg_account_id__c, phone, billingcity, active__c)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING sfid, name, axg_account_id__c, active__c`,
+      [name, externalId, phone || null, billingCity || null, !!active]
+    );
+
+    // sfid peut être null le temps que Connect pousse vers SF
+    res.status(201).json({ account: ins.rows[0], sync: 'pending' });
+  } catch (e) {
+    console.error('POST /account error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
 // 2) PUT /contact/:externalId
 app.put('/contact/:externalId', async (req, res) => {
   const { externalId } = req.params;

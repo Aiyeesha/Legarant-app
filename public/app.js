@@ -11,6 +11,24 @@ $('#btnHealth').addEventListener('click', async () => {
 });
 
 /* Register */
+document.querySelector('#formAccount')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target).entries());
+  Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+  try {
+    const r = await fetch('/account', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await r.json();
+    document.querySelector('#outAccount').textContent = JSON.stringify({ status: r.status, ...json }, null, 2);
+  } catch (e2) {
+    document.querySelector('#outAccount').textContent = JSON.stringify({ error: e2.message }, null, 2);
+  }
+});
+
+
 $('#formRegister').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target).entries());
