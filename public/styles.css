@@ -1,0 +1,56 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --text: #e5e7eb;
+  --accent: #22d3ee;
+  --muted: #94a3b8;
+  --border: #1f2937;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(1200px 600px at 80% -10%, #164e63 0, transparent 50%), var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,.2); backdrop-filter: blur(6px);
+}
+.logo { height: 32px; width: auto; }
+.container {
+  width: min(1100px, 92vw);
+  margin: 24px auto 40px; display: grid; gap: 16px;
+}
+.card {
+  background: linear-gradient(180deg, #0b1220 0, #0a101a 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03);
+}
+h1, h2 { margin: 0 0 10px; }
+h2 { color: #e2e8f0; font-size: 18px; }
+.row, .grid { display: grid; gap: 8px; }
+.row { grid-template-columns: 1fr auto auto; align-items: center; }
+.grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 700px) { .grid, .row { grid-template-columns: 1fr; } }
+label { color: var(--muted); display: grid; gap: 6px; }
+input, select, button, textarea {
+  background: #0b1220; color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; outline: none;
+}
+button {
+  background: linear-gradient(90deg, #0ea5e9, #22d3ee);
+  color: #06202b; font-weight: 700; border: none; cursor: pointer;
+  transition: transform .06s ease, filter .2s ease;
+}
+button:hover { filter: brightness(1.08); }
+button:active { transform: translateY(1px); }
+.out {
+  margin-top: 10px; background: #050a14; border: 1px dashed #1e293b;
+  border-radius: 10px; padding: 10px; max-height: 300px; overflow: auto;
+  color: #cbd5e1;
+}
+.footer { text-align: center; color: var(--muted); padding: 20px; }

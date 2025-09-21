@@ -1,0 +1,243 @@
+// server.js — LEGARANT SOCMOB
+const express = require('express');
+const path = require('path');
+const { Pool } = require('pg');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+/* ---------- middlewares ---------- */
+app.use(express.json({ limit: '512kb' }));
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+/* ---------- static front ---------- */
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+app.get('/', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
+app.get('/health', (_req, res) => res.type('text').send('OK'));
+
+/* ---------- DB (Heroku Postgres via Heroku Connect) ---------- */
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { require: true, rejectUnauthorized: false },
+});
+
+/* ---------- utils ---------- */
+const isEmail = s => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+const pick = (obj, allowed) => Object.fromEntries(
+  Object.entries(obj || {}).filter(([k, v]) => allowed.includes(k) && v !== undefined)
+);
+
+/* ---------- API ---------- */
+// 1) POST /register
+app.post('/register', async (req, res) => {
+  try {
+    const { firstName, lastName, email, mobile, accountExternalId } = req.body || {};
+    if (!isEmail(email)) return res.status(400).json({ error: 'invalid_email' });
+
+    const dup = await pool.query(
+      `SELECT sfid FROM salesforce.contact
+       WHERE lower(email)=lower($1) AND (isdeleted=false OR isdeleted IS NULL)
+       LIMIT 1`, [email]
+    );
+    if (dup.rowCount) return res.status(409).json({ error: 'email_exists', sfid: dup.rows[0].sfid });
+
+    let accountId = null;
+    if (accountExternalId) {
+      const acc = await pool.query(
+        `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
+        [accountExternalId]
+      );
+      accountId = acc.rows[0]?.sfid || null;
+    }
+
+    const ins = await pool.query(
+      `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountname, accountid)
+       VALUES ($1,$2,$3,$4,true,$5)
+       RETURNING sfid, firstname, lastname, email, accountid`,
+      [firstName || null, lastName || null, email, mobile || null, accountId]
+    );
+
+    res.status(201).json({ contact: ins.rows[0], sync: 'pending' });
+  } catch (e) {
+    console.error('POST /register error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// 2) PUT /contact/:externalId
+app.put('/contact/:externalId', async (req, res) => {
+  const { externalId } = req.params;
+  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+
+  const allowed = [
+    'FirstName','LastName','Email','Phone','MobilePhone',
+    'MailingStreet','MailingCity','MailingPostalCode','MailingCountry',
+    'Active__c','Title','Department'
+  ];
+  const body = pick(req.body, allowed);
+  if (body.Email && !isEmail(body.Email)) return res.status(400).json({ error: 'invalid_email' });
+
+  const mapCol = {
+    FirstName:'firstname', LastName:'lastname', Email:'email', Phone:'phone',
+    MobilePhone:'mobilephone', MailingStreet:'mailingstreet', MailingCity:'mailingcity',
+    MailingPostalCode:'mailingpostalcode', MailingCountry:'mailingcountry',
+    Active__c:'active__c', Title:'title', Department:'department',
+  };
+
+  const sets = [], params = [];
+  Object.entries(body).forEach(([api, val]) => { params.push(val); sets.push(`${mapCol[api]}=$${params.length}`); });
+  if (!sets.length) return res.status(400).json({ error: 'no_updatable_fields' });
+
+  params.push(externalId);
+  const sql = `
+    UPDATE salesforce.contact
+       SET ${sets.join(', ')},
+           systemmodstamp = systemmodstamp
+     WHERE axg_contact_id__c = $${params.length}
+     RETURNING sfid, firstname, lastname, email, phone, mobilephone, mailingcity, active__c
+  `;
+  try {
+    const r = await pool.query(sql, params);
+    if (!r.rowCount) return res.status(404).json({ error: 'contact_not_found' });
+    res.json({ contact: r.rows[0] });
+  } catch (e) {
+    console.error('PUT /contact error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// 3) GET /products
+app.get('/products', async (req, res) => {
+  const { pricebookId, pricebookName, q, limit = 50, offset = 0 } = req.query;
+  const params = [];
+  let where = 'p.isactive = true';
+
+  if (q && String(q).trim()) {
+    params.push(`%${String(q).trim().toLowerCase()}%`);
+    where += ` AND (lower(p.name) LIKE $${params.length} OR lower(p.productcode) LIKE $${params.length})`;
+  }
+
+  let pbJoin = 'AND pb.isstandard = true';
+  if (pricebookId || pricebookName) {
+    if (pricebookId) { params.push(pricebookId); pbJoin = `AND pbe.pricebook2id = $${params.length}`; }
+    else { params.push(pricebookName); pbJoin = `AND pb.name = $${params.length}`; }
+  }
+
+  params.push(Number(limit), Number(offset));
+  const sql = `
+    SELECT p.sfid AS product_id, p.name, p.productcode AS code, p.family, p.description, p.isactive AS active,
+           pbe.sfid AS pricebook_entry_id, pbe.unitprice, pb.sfid AS pricebook_id, pb.name AS pricebook_name
+    FROM salesforce.product2 p
+    JOIN salesforce.pricebookentry pbe ON pbe.product2id = p.sfid AND pbe.isactive = true
+    JOIN salesforce.pricebook2 pb      ON pb.sfid = pbe.pricebook2id
+    WHERE ${where} ${pbJoin}
+    ORDER BY p.name
+    LIMIT $${params.length - 1} OFFSET $${params.length}
+  `;
+  try {
+    const { rows } = await pool.query(sql, params);
+    res.json({ items: rows, limit: Number(limit), offset: Number(offset) });
+  } catch (e) {
+    console.error('GET /products error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// 4) GET /orders/:accountExternalId
+app.get('/orders/:accountExternalId', async (req, res) => {
+  const { accountExternalId } = req.params;
+  const { status, limit = 50, offset = 0 } = req.query;
+  try {
+    const acc = await pool.query(
+      `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
+      [accountExternalId]
+    );
+    const accountId = acc.rows[0]?.sfid;
+    if (!accountId) return res.status(404).json({ error: 'account_not_found' });
+
+    const params = [accountId];
+    let where = 'o.accountid = $1';
+    if (status) { params.push(status); where += ` AND o.status = $${params.length}`; }
+    params.push(Number(limit), Number(offset));
+
+    const ordersSql = `
+      SELECT o.sfid AS order_id, o.ordernumber AS order_number, o.name,
+             o.effectivedate AS start_date, o.enddate AS end_date,
+             o.totalamount AS total_amount, o.status, o.pricebook2id AS pricebook_id
+      FROM salesforce."order" o
+      WHERE ${where}
+      ORDER BY o.ordereddate DESC NULLS LAST
+      LIMIT $${params.length - 1} OFFSET $${params.length}
+    `;
+    const orders = await pool.query(ordersSql, params);
+    if (!orders.rowCount) return res.json({ items: [], limit: Number(limit), offset: Number(offset) });
+
+    const ids = orders.rows.map(r => r.order_id);
+    const items = await pool.query(`
+      SELECT oi.sfid AS orderitem_id, oi.orderid AS order_id, oi.product2id AS product_id,
+             oi.quantity, oi.unitprice AS unit_price, oi.totalprice AS total_price
+      FROM salesforce.orderitem oi
+      WHERE oi.orderid = ANY($1::varchar[])
+    `, [ids]);
+
+    const byOrder = items.rows.reduce((m, it) => ((m[it.order_id] ||= []).push(it), m), {});
+    const payload = orders.rows.map(o => ({ ...o, items: byOrder[o.order_id] || [] }));
+    res.json({ items: payload, limit: Number(limit), offset: Number(offset) });
+  } catch (e) {
+    console.error('GET /orders error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// 5) GET /contact/:email
+app.get('/contact/:email', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const { rows } = await pool.query(`
+      SELECT sfid, firstname, lastname, email, active__c, axg_contact_id__c
+      FROM salesforce.contact
+      WHERE lower(email)=lower($1) AND (isdeleted=false OR isdeleted IS NULL)
+      ORDER BY systemmodstamp DESC
+      LIMIT 1
+    `, [email]);
+    if (!rows.length) return res.status(404).json({ message: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// 6) GET /account/:externalId/contacts
+app.get('/account/:externalId/contacts', async (req, res) => {
+  const { externalId } = req.params;
+  const { active } = req.query;
+  try {
+    const params = [externalId];
+    let where = `a.axg_account_id__c = $1`;
+    if (active === 'true' || active === 'false') {
+      params.push(active === 'true'); where += ` AND c.active__c = $${params.length}`;
+    }
+    const { rows } = await pool.query(`
+      SELECT c.sfid, c.firstname, c.lastname, c.email, c.active__c, c.axg_contact_id__c
+      FROM salesforce.contact c
+      JOIN salesforce.account a ON c.accountid = a.sfid
+      WHERE ${where}
+      ORDER BY c.lastname NULLS LAST, c.firstname NULLS LAST
+    `, params);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+/* ---------- boot ---------- */
+app.listen(port, () => console.log(`SOCMOB API running on ${port}`));
