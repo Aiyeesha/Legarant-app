@@ -4,17 +4,36 @@ const show = (el, data) => el.textContent = JSON.stringify(data, null, 2);
 /* Healthcheck */
 $('#btnHealth').addEventListener('click', async () => {
   try {
-    const r = await fetch('/');
+    const r = await fetch('/health');
     const t = await r.text();
     show($('#outHealth'), { ok: r.ok, text: t });
   } catch (e) { show($('#outHealth'), { error: e.message }); }
 });
 
-/* Register */
+/* Create Account */
+$('#formAccount').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  // Checkbox -> boolean
+  const body = Object.fromEntries(fd.entries());
+  body.active = fd.get('active') === 'on';
+  Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+
+  try {
+    const r = await fetch('/account', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    const json = await r.json();
+    show($('#outAccount'), { status: r.status, ...json });
+  } catch (e) { show($('#outAccount'), { error: e.message }); }
+});
+
+/* Register Contact */
 $('#formRegister').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target).entries());
-  // Normalise clés vides
   Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
   try {
     const r = await fetch('/register', {
@@ -47,7 +66,7 @@ $('#btnAccContacts').addEventListener('click', async () => {
   try {
     const r = await fetch(`/account/${encodeURIComponent(ext)}/contacts${q}`);
     const json = await r.json();
-    show($('#outAccContacts'), { count: json.length ?? 0, items: json });
+    show($('#outAccContacts'), { count: Array.isArray(json) ? json.length : 0, items: json });
   } catch (e) { show($('#outAccContacts'), { error: e.message }); }
 });
 
