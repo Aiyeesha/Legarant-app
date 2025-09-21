@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LEGARANT – SOCMOB Console</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <img src="./assets/logo.png" alt="LEGARANT" class="logo" />
+    <h1>SOCMOB Console</h1>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Healthcheck</h2>
+      <button id="btnHealth">Tester l’API</button>
+      <pre id="outHealth" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Auto-inscription (POST /register)</h2>
+      <form id="formRegister">
+        <div class="grid">
+          <label>First Name <input name="firstName" required /></label>
+          <label>Last Name <input name="lastName" required /></label>
+          <label>Email <input type="email" name="email" required /></label>
+          <label>Mobile <input name="mobile" /></label>
+          <label>Account Name (optionnel)
+            <input name="accountname" placeholder=" Lebensversicherung " />
+          </label>
+          <label>Account External Id (optionnel)
+            <input name="accountExternalId" placeholder="AXG-ACCT-10001" />
+          </label>
+        </div>
+        <button type="submit">Créer le contact</button>
+      </form>
+      <pre id="outRegister" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Contact par email (GET /contact/:email)</h2>
+      <div class="row">
+        <input id="emailLookup" type="email" placeholder="anna@example.de" />
+        <button id="btnLookup">Rechercher</button>
+      </div>
+      <pre id="outLookup" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Contacts d’un compte (GET /account/:extId/contacts)</h2>
+      <div class="row">
+        <input id="accExtId" placeholder="AXG-ACCT-10001" />
+        <select id="accActive">
+          <option value="">— tous —</option>
+          <option value="true">Actifs</option>
+          <option value="false">Inactifs</option>
+        </select>
+        <button id="btnAccContacts">Lister</button>
+      </div>
+      <pre id="outAccContacts" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Contrat par External Id (GET /contract/:axgContractId)</h2>
+      <div class="row">
+        <input id="contractExtId" placeholder="AXG-CTR-70001" />
+        <button id="btnContract">Rechercher</button>
+      </div>
+      <pre id="outContract" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Catalogue produits (GET /products)</h2>
+      <div class="row">
+        <input id="qProducts" placeholder="Recherche (nom/code)..." />
+        <input id="pbName" placeholder="Pricebook name (ex: Standard Price Book)" />
+        <button id="btnProducts">Chercher</button>
+      </div>
+      <pre id="outProducts" class="out"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Commandes (GET /orders/:accountExternalId)</h2>
+      <div class="row">
+        <input id="ordersAccExtId" placeholder="AXG-ACCT-10001" />
+        <input id="ordersStatus" placeholder="Status (ex: Activated)" />
+        <button id="btnOrders">Lister</button>
+      </div>
+      <pre id="outOrders" class="out"></pre>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <small>© LEGARANT – Démo SOCMOB (Heroku)</small>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
