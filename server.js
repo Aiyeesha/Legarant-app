@@ -145,14 +145,14 @@ app.patch('/account/:externalId', async (req, res) => {
   if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
 
   const allowed = [
-    'Name','Phone','Website','Industry','NumberOfEmployees','AnnualRevenue',
+    'Name','Phone','Website','Industry','NumberOfEmployees',
     'Type','Rating','AccountSource','Active__c',
     'BillingStreet','BillingCity','BillingPostalCode','BillingCountry',
     'ShippingStreet','ShippingCity','ShippingPostalCode','ShippingCountry'
   ];
   const mapCol = {
     Name:'name', Phone:'phone', Website:'website', Industry:'industry',
-    NumberOfEmployees:'numberofemployees', AnnualRevenue:'annualrevenue',
+    NumberOfEmployees:'numberofemployees',
     Type:'type', Rating:'rating', AccountSource:'accountsource', Active__c:'active__c',
     BillingStreet:'billingstreet', BillingCity:'billingcity', BillingPostalCode:'billingpostalcode', BillingCountry:'billingcountry',
     ShippingStreet:'shippingstreet', ShippingCity:'shippingcity', ShippingPostalCode:'shippingpostalcode', ShippingCountry:'shippingcountry'
@@ -171,7 +171,7 @@ app.patch('/account/:externalId', async (req, res) => {
            systemmodstamp = systemmodstamp
      WHERE axg_account_id__c = $${params.length}
      RETURNING sfid, axg_account_id__c, name, phone, website, industry,
-               numberofemployees, annualrevenue, type, rating, accountsource, active__c
+               numberofemployees, active__c
   `;
   try {
     const r = await pool.query(sql, params);
