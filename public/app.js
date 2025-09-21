@@ -4,17 +4,21 @@ const show = (el, data) => el.textContent = JSON.stringify(data, null, 2);
 /* Healthcheck */
 $('#btnHealth').addEventListener('click', async () => {
   try {
-    const r = await fetch('/');
+    const r = await fetch('/health');
     const t = await r.text();
     show($('#outHealth'), { ok: r.ok, text: t });
   } catch (e) { show($('#outHealth'), { error: e.message }); }
 });
 
-/* Register */
-document.querySelector('#formAccount')?.addEventListener('submit', async (e) => {
+/* Create Account */
+$('#formAccount').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
+  const fd = new FormData(e.target);
+  // Checkbox -> boolean
+  const body = Object.fromEntries(fd.entries());
+  body.active = fd.get('active') === 'on';
   Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+
   try {
     const r = await fetch('/account', {
       method: 'POST',
@@ -22,17 +26,14 @@ document.querySelector('#formAccount')?.addEventListener('submit', async (e) => 
       body: JSON.stringify(body)
     });
     const json = await r.json();
-    document.querySelector('#outAccount').textContent = JSON.stringify({ status: r.status, ...json }, null, 2);
-  } catch (e2) {
-    document.querySelector('#outAccount').textContent = JSON.stringify({ error: e2.message }, null, 2);
-  }
+    show($('#outAccount'), { status: r.status, ...json });
+  } catch (e) { show($('#outAccount'), { error: e.message }); }
 });
 
-
+/* Register Contact */
 $('#formRegister').addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target).entries());
-  // Normalise clés vides
   Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
   try {
     const r = await fetch('/register', {
@@ -65,7 +66,7 @@ $('#btnAccContacts').addEventListener('click', async () => {
   try {
     const r = await fetch(`/account/${encodeURIComponent(ext)}/contacts${q}`);
     const json = await r.json();
-    show($('#outAccContacts'), { count: json.length ?? 0, items: json });
+    show($('#outAccContacts'), { count: Array.isArray(json) ? json.length : 0, items: json });
   } catch (e) { show($('#outAccContacts'), { error: e.message }); }
 });
 

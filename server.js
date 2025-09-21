@@ -35,7 +35,33 @@ const pick = (obj, allowed) => Object.fromEntries(
 );
 
 /* ---------- API ---------- */
-// 1) POST /register
+// POST /account  -> créer un compte sans contact
+app.post('/account', async (req, res) => {
+  try {
+    const { name, externalId, phone, billingCity, active = true } = req.body || {};
+    if (!name || !externalId) return res.status(400).json({ error: 'name_and_externalId_required' });
+
+    const dup = await pool.query(
+      'SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1',
+      [externalId]
+    );
+    if (dup.rowCount) return res.status(409).json({ error: 'account_exists', sfid: dup.rows[0].sfid });
+
+    const ins = await pool.query(
+      `INSERT INTO salesforce.account (name, axg_account_id__c, phone, billingcity, active__c)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING sfid, name, axg_account_id__c, active__c`,
+      [name, externalId, phone || null, billingCity || null, !!active]
+    );
+
+    res.status(201).json({ account: ins.rows[0], sync: 'pending' });
+  } catch (e) {
+    console.error('POST /account error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// POST /register  -> créer un contact (optionnellement rattaché via Account External Id)
 app.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, mobile, accountExternalId } = req.body || {};
@@ -68,52 +94,6 @@ app.post('/register', async (req, res) => {
   } catch (e) {
     console.error('POST /register error:', e);
     res.status(500).json({ error: 'server_error' });
-  }
-});
-
-// POST /account  -> crée ou prépare un compte sans contact
-// 0) util
-const clean = (o, allowed) =>
-  Object.fromEntries(Object.entries(o||{}).filter(([k,v]) => allowed.includes(k) && v !== undefined));
-
-/* 1) POST /accounts  — créer un compte seul */
-app.post('/accounts', async (req, res) => {
-  try {
-    // champs courants côté Connect (adapter si tes mappings diffèrent)
-    const allowed = [
-      'Name','Phone','Website',
-      'BillingStreet','BillingCity','BillingPostalCode','BillingCountry',
-      'AXG_Account_Id__c'   // ton External Id
-    ];
-    const body = clean(req.body, allowed);
-
-    if (!body.Name) return res.status(400).json({ error: 'missing_name' });
-
-    // anti-doublon par External Id si fourni
-    if (body.AXG_Account_Id__c) {
-      const dup = await pool.query(
-        `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
-        [body.AXG_Account_Id__c]
-      );
-      if (dup.rowCount) return res.status(409).json({ error: 'account_exists', sfid: dup.rows[0].sfid });
-    }
-
-    const q = `
-      INSERT INTO salesforce.account
-        (name, phone, website, billingstreet, billingcity, billingpostalcode, billingcountry, axg_account_id__c)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      RETURNING sfid, name, axg_account_id__c
-    `;
-    const p = [
-      body.Name||null, body.Phone||null, body.Website||null,
-      body.BillingStreet||null, body.BillingCity||null, body.BillingPostalCode||null, body.BillingCountry||null,
-      body.AXG_Account_Id__c||null
-    ];
-    const { rows } = await pool.query(q, p);
-    return res.status(201).json({ account: rows[0], sync: 'pending' }); // SF prendra le relais via Connect
-  } catch (e) {
-    console.error('POST /accounts error:', e);
-    return res.status(500).json({ error: 'server_error' });
   }
 });
 
