@@ -114,6 +114,83 @@
       <pre id="outPatchAccount" class="out"></pre>
     </section>
 
+    <!-- ====== Créer un Contrat (POST /contract) ====== -->
+<section class="card">
+  <h2>Créer un Contrat (POST /contract)</h2>
+  <form id="formContractCreate">
+    <div class="grid">
+      <label>Account External Id
+        <input name="accountExternalId" placeholder="AXG-ACCT-10001" required />
+      </label>
+      <label>Contract External Id
+        <input name="externalId" placeholder="AXG-CTR-70001" required />
+      </label>
+      <label>Start Date
+        <input type="date" name="startDate" />
+      </label>
+      <label>End Date
+        <input type="date" name="endDate" />
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">(par défaut: Draft)</option>
+          <option>Draft</option>
+          <option>In Approval</option>
+          <option>Activated</option>
+          <option>Expired</option>
+          <option>Cancelled</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Créer le contrat</button>
+  </form>
+  <pre id="outContractCreate" class="out"></pre>
+</section>
+
+<!-- ====== Modifier un Contrat (PATCH /contract/:externalId) ====== -->
+<section class="card">
+  <h2>Modifier un Contrat (PATCH /contract/:externalId)</h2>
+  <form id="formContractPatch">
+    <div class="grid">
+      <label>Contract External Id (AXG_Contract_Id__c)
+        <input name="externalId" placeholder="AXG-CTR-70001" required />
+      </label>
+
+      <label>Status
+        <select name="Status">
+          <option value="">— inchangé —</option>
+          <option>Draft</option>
+          <option>In Approval</option>
+          <option>Activated</option>
+          <option>Expired</option>
+          <option>Cancelled</option>
+        </select>
+      </label>
+
+      <label>StartDate
+        <input type="date" name="StartDate" />
+      </label>
+      <label>EndDate
+        <input type="date" name="EndDate" />
+      </label>
+
+      <label>ContractTerm (mois)
+        <input type="number" name="ContractTerm" min="0" step="1" />
+      </label>
+
+      <label style="grid-column:1/-1">Description
+        <textarea name="Description" rows="3" placeholder="Notes / description commerciale…"></textarea>
+      </label>
+      <label style="grid-column:1/-1">SpecialTerms
+        <textarea name="SpecialTerms" rows="3" placeholder="Conditions particulières…"></textarea>
+      </label>
+    </div>
+    <button type="submit">Mettre à jour le contrat</button>
+  </form>
+  <pre id="outContractPatch" class="out"></pre>
+</section>
+
+
     <section class="card">
       <h2>Contact par email (GET /contact/:email)</h2>
       <div class="row">

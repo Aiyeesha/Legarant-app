@@ -168,3 +168,63 @@ document.querySelector('#formPatchAccount').addEventListener('submit', async (e)
     show($('#outPatchAccount'), { error: e.message });
   }
 });
+/* ========= POST /contract ========= */
+$('#formContractCreate').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+
+  // Nettoie les champs vides
+  Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+
+  if (!body.accountExternalId || !body.externalId) {
+    return show($('#outContractCreate'), { error: 'accountExternalId et externalId sont requis' });
+  }
+
+  try {
+    const r = await fetch('/contract', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await r.json().catch(() => ({}));
+    show($('#outContractCreate'), { status: r.status, ...json, sent: body });
+  } catch (e2) {
+    show($('#outContractCreate'), { error: e2.message });
+  }
+});
+
+/* ========= PATCH /contract/:externalId ========= */
+$('#formContractPatch').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const externalId = (fd.get('externalId') || '').trim();
+  if (!externalId) {
+    return show($('#outContractPatch'), { error: 'External Id requis' });
+  }
+
+  // Autorisés côté API : Status, StartDate, EndDate, ContractTerm, Description, SpecialTerms
+  const allowed = ['Status','StartDate','EndDate','ContractTerm','Description','SpecialTerms'];
+  const body = {};
+  for (const k of allowed) {
+    const v = fd.get(k);
+    if (v !== null && v !== '') {
+      body[k] = (k === 'ContractTerm') ? Number(v) : v;
+    }
+  }
+  if (!Object.keys(body).length) {
+    return show($('#outContractPatch'), { error: 'Aucun champ modifié' });
+  }
+
+  try {
+    const r = await fetch(`/contract/${encodeURIComponent(externalId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await r.json().catch(() => ({}));
+    show($('#outContractPatch'), { status: r.status, ...json, sent: body });
+  } catch (e2) {
+    show($('#outContractPatch'), { error: e2.message });
+  }
+});

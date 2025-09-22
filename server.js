@@ -183,6 +183,90 @@ app.patch('/account/:externalId', async (req, res) => {
   }
 });
 
+// ---------- POST /contract ----------
+app.post('/contract', async (req, res) => {
+  try {
+    const { accountExternalId, externalId, startDate, endDate, status } = req.body || {};
+
+    if (!accountExternalId || !externalId) {
+      return res.status(400).json({ error: 'accountExternalId_and_externalId_required' });
+    }
+
+    // 1) Vérifier si l’Account existe
+    const acc = await pool.query(
+      `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
+      [accountExternalId]
+    );
+    const accountId = acc.rows[0]?.sfid;
+    if (!accountId) return res.status(404).json({ error: 'account_not_found' });
+
+    // 2) Vérifier doublon externalId
+    const dup = await pool.query(
+      `SELECT sfid FROM salesforce.contract WHERE axg_contract_id__c=$1 LIMIT 1`,
+      [externalId]
+    );
+    if (dup.rowCount) return res.status(409).json({ error: 'contract_exists', sfid: dup.rows[0].sfid });
+
+    // 3) Insert
+    const ins = await pool.query(
+      `INSERT INTO salesforce.contract (axg_contract_id__c, accountid, startdate, enddate, status)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING sfid, axg_contract_id__c, contractnumber, status, startdate, enddate, accountid`,
+      [externalId, accountId, startDate || null, endDate || null, status || 'Draft']
+    );
+
+    res.status(201).json({ contract: ins.rows[0], sync: 'pending' });
+  } catch (e) {
+    console.error('POST /contract error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// ---------- PATCH /contract/:externalId ----------
+app.patch('/contract/:externalId', async (req, res) => {
+  const { externalId } = req.params;
+  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+
+  // Champs autorisés
+  const allowed = ['Status', 'StartDate', 'EndDate', 'ContractTerm', 'Description', 'SpecialTerms'];
+  const mapCol = {
+    Status: 'status',
+    StartDate: 'startdate',
+    EndDate: 'enddate',
+    ContractTerm: 'contractterm',
+    Description: 'description',
+    SpecialTerms: 'specialterms',
+  };
+
+  const sets = [];
+  const params = [];
+  for (const [api, val] of Object.entries(req.body || {})) {
+    if (allowed.includes(api)) {
+      sets.push(`${mapCol[api]} = $${params.length + 1}`);
+      params.push(val);
+    }
+  }
+  if (!sets.length) return res.status(400).json({ error: 'no_updatable_fields' });
+
+  params.push(externalId);
+  const sql = `
+    UPDATE salesforce.contract
+       SET ${sets.join(', ')}, systemmodstamp = systemmodstamp
+     WHERE axg_contract_id__c = $${params.length}
+     RETURNING sfid, axg_contract_id__c, contractnumber, status, startdate, enddate
+  `;
+
+  try {
+    const r = await pool.query(sql, params);
+    if (!r.rowCount) return res.status(404).json({ error: 'contract_not_found' });
+    return res.json({ contract: r.rows[0] });
+  } catch (e) {
+    console.error('PATCH /contract error:', e);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+
 /* --- GET utilitaires déjà en place --- */
 app.get('/contact/:email', async (req, res) => {
   try {
