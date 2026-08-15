@@ -86,11 +86,10 @@
 
           <div class="card">
             <h2>Créer un compte</h2>
-            <p class="hint">POST /account</p>
+            <p class="hint">POST /account — l'Id Salesforce (sfid) n'existe pas encore à la création : il faut poller le statut de sync ci-dessous une fois le compte créé.</p>
             <form id="formAccount">
               <div class="grid">
                 <label>Account Name <input name="name" required /></label>
-                <label>External Id <input name="externalId" required placeholder="AXG-ACCT-10001" /></label>
                 <label>Téléphone <input name="phone" /></label>
                 <label>Billing City <input name="billingCity" /></label>
                 <label class="checkline">
@@ -103,12 +102,22 @@
           </div>
 
           <div class="card">
+            <h2>Statut de synchronisation d’un compte</h2>
+            <p class="hint">GET /account/:id/status — id interne Heroku Connect (rempli automatiquement après une création). Rejouer jusqu’à obtenir un sfid.</p>
+            <div class="row">
+              <input id="accStatusId" placeholder="id (ex: 42)" />
+              <button id="btnAccStatus">Vérifier</button>
+            </div>
+            <pre id="outAccStatus" class="out"></pre>
+          </div>
+
+          <div class="card">
             <h2>Modifier un compte</h2>
-            <p class="hint">PATCH /account/:externalId</p>
+            <p class="hint">PATCH /account/:sfid</p>
             <form id="formPatchAccount">
               <div class="grid">
-                <label>External Id (AXG_Account_Id__c)
-                  <input name="externalId" placeholder="AXG-ACCT-10001" required />
+                <label>Sfid du compte (Id Salesforce)
+                  <input name="sfid" placeholder="001XXXXXXXXXXXXXXX" required />
                 </label>
                 <label>Name <input name="Name" /></label>
                 <label>Phone <input name="Phone" /></label>
@@ -131,9 +140,9 @@
 
           <div class="card">
             <h2>Contacts d’un compte</h2>
-            <p class="hint">GET /account/:externalId/contacts</p>
+            <p class="hint">GET /account/:sfid/contacts</p>
             <div class="row">
-              <input id="accExtId" placeholder="AXG-ACCT-10001" />
+              <input id="accExtId" placeholder="Sfid du compte (001XXXXXXXXXXXXXXX)" />
               <select id="accActive">
                 <option value="">— tous —</option>
                 <option value="true">Actifs</option>
@@ -162,8 +171,8 @@
                 <label>Last Name <input name="lastName" required /></label>
                 <label>Email <input type="email" name="email" required /></label>
                 <label>Mobile <input name="mobile" /></label>
-                <label>Account External Id (optionnel)
-                  <input name="accountExternalId" placeholder="AXG-ACCT-10001" />
+                <label>Sfid du compte (optionnel — le compte doit déjà être synchronisé)
+                  <input name="accountSfid" placeholder="001XXXXXXXXXXXXXXX" />
                 </label>
               </div>
               <button type="submit">Créer le contact</button>
@@ -172,12 +181,22 @@
           </div>
 
           <div class="card">
+            <h2>Statut de synchronisation d’un contact</h2>
+            <p class="hint">GET /contact/:id/status — id interne Heroku Connect (rempli automatiquement après une création). Rejouer jusqu’à obtenir un sfid.</p>
+            <div class="row">
+              <input id="contactStatusId" placeholder="id (ex: 17)" />
+              <button id="btnContactStatus">Vérifier</button>
+            </div>
+            <pre id="outContactStatus" class="out"></pre>
+          </div>
+
+          <div class="card">
             <h2>Modifier un contact</h2>
-            <p class="hint">PATCH /contact/:externalId</p>
+            <p class="hint">PATCH /contact/:sfid</p>
             <form id="formPatchContact">
               <div class="grid">
-                <label>External Id (AXG_Contact_Id__c)
-                  <input name="externalId" placeholder="AXG-000001" required />
+                <label>Sfid du contact (Id Salesforce)
+                  <input name="sfid" placeholder="003XXXXXXXXXXXXXXX" required />
                 </label>
                 <label>FirstName <input name="FirstName" /></label>
                 <label>LastName <input name="LastName" /></label>
@@ -220,14 +239,11 @@
 
           <div class="card">
             <h2>Créer un contrat</h2>
-            <p class="hint">POST /contract</p>
+            <p class="hint">POST /contract — le compte doit déjà être synchronisé (avoir un sfid).</p>
             <form id="formContractCreate">
               <div class="grid">
-                <label>Account External Id
-                  <input name="accountExternalId" placeholder="AXG-ACCT-10001" required />
-                </label>
-                <label>Contract External Id
-                  <input name="externalId" placeholder="AXG-CTR-70001" required />
+                <label>Sfid du compte
+                  <input name="accountSfid" placeholder="001XXXXXXXXXXXXXXX" required />
                 </label>
                 <label>Start Date <input type="date" name="startDate" /></label>
                 <label>End Date <input type="date" name="endDate" /></label>
@@ -248,12 +264,22 @@
           </div>
 
           <div class="card">
+            <h2>Statut de synchronisation d’un contrat</h2>
+            <p class="hint">GET /contract/:id/status — id interne Heroku Connect (rempli automatiquement après une création). Rejouer jusqu’à obtenir un sfid.</p>
+            <div class="row">
+              <input id="contractStatusId" placeholder="id (ex: 8)" />
+              <button id="btnContractStatus">Vérifier</button>
+            </div>
+            <pre id="outContractStatus" class="out"></pre>
+          </div>
+
+          <div class="card">
             <h2>Modifier un contrat</h2>
-            <p class="hint">PATCH /contract/:externalId</p>
+            <p class="hint">PATCH /contract/:sfid</p>
             <form id="formContractPatch">
               <div class="grid">
-                <label>Contract External Id (AXG_Contract_Id__c)
-                  <input name="externalId" placeholder="AXG-CTR-70001" required />
+                <label>Sfid du contrat (Id Salesforce)
+                  <input name="sfid" placeholder="800XXXXXXXXXXXXXXX" required />
                 </label>
                 <label>Status
                   <select name="Status">
@@ -281,10 +307,10 @@
           </div>
 
           <div class="card">
-            <h2>Recherche par External Id</h2>
-            <p class="hint">GET /contract/:axgContractId</p>
+            <h2>Recherche par Sfid</h2>
+            <p class="hint">GET /contract/:sfid</p>
             <div class="row">
-              <input id="contractExtId" placeholder="AXG-CTR-70001" />
+              <input id="contractExtId" placeholder="800XXXXXXXXXXXXXXX" />
               <button id="btnContract">Rechercher</button>
             </div>
             <pre id="outContract" class="out"></pre>
@@ -314,9 +340,9 @@
         <section class="view" id="view-orders" hidden>
           <div class="card">
             <h2>Commandes</h2>
-            <p class="hint">GET /orders/:accountExternalId</p>
+            <p class="hint">GET /orders/:accountSfid</p>
             <div class="row">
-              <input id="ordersAccExtId" placeholder="AXG-ACCT-10001" />
+              <input id="ordersAccExtId" placeholder="Sfid du compte (001XXXXXXXXXXXXXXX)" />
               <input id="ordersStatus" placeholder="Status (ex: Activated)" />
               <button id="btnOrders">Lister</button>
             </div>

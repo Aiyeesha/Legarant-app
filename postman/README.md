@@ -18,3 +18,7 @@ L'environnement `LEGARANT-Connected-App-Salesforce.postman_environment.json` est
 ## Avant de lancer la collection Heroku
 
 Mettre à jour `base_url` dans l'environnement : `http://localhost:3000` en local, ou l'URL Heroku en staging/prod.
+
+## Identifiants
+
+`AXG_Account_Id__c` / `AXG_Contact_Id__c` / `AXG_Contract_Id__c` sont des champs Auto-Number Salesforce : leur valeur est toujours générée côté Salesforce, jamais fournie par le client (voir README racine > Identifiants). La collection **LEGARANT-SOCMOB-Heroku-API** ne les utilise donc plus : elle capture `id` (interne Heroku Connect) à la création, poll `GET /.../:id/status` jusqu'à obtenir `sfid`, puis utilise ce `sfid` pour les `PATCH`/`GET` suivants. La collection **LEGARANT-Connected-App-Salesforce** appelle directement Salesforce et contient encore le pattern d'upsert par `AXG_..._Id__c` — voir l'avertissement dans sa description : ce pattern ne fonctionne pas de façon fiable pour un Auto-Number et nécessiterait un vrai champ External ID (Text) côté Salesforce pour être corrigé.

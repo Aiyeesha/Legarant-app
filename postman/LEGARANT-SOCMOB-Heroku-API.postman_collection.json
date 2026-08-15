@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "b6b6f8b0-2f2a-4f6e-9c9a-socmob-heroku-api",
     "name": "LEGARANT SOCMOB – API Heroku (apiret)",
-    "description": "# LEGARANT SOCMOB – API Heroku\n\n## Objectif\n\nCette collection teste l'API REST maison exposée par l'app Heroku `Legarant-mobile-socmob` (fichier `server.js`), qui lit/écrit dans la base Postgres synchronisée par Heroku Connect (miroir des objets Salesforce Account/Contact/Contract/Order/Product2).\n\nElle est complémentaire à la collection **LEGARANT Connected app**, qui appelle directement l'API REST Salesforce via OAuth2 (Connected App). Ici, on ne parle jamais directement à Salesforce : on parle à l'app Heroku, qui elle-même lit la base répliquée.\n\n## Variables d'environnement\n\n| Variable | Description |\n| --- | --- |\n| `base_url` | URL de base de l'app (ex: `https://<app>.herokuapp.com` ou `http://localhost:3000` en local) |\n| `axgAccountId` | External Id Account utilisé pour les tests (AXG_Account_Id__c) |\n| `axgContactId` | External Id Contact utilisé pour les tests (AXG_Contact_Id__c) |\n| `axgContractId` | External Id Contract utilisé pour les tests (AXG_Contract_Id__c) |\n| `contactEmail` | Email utilisé pour créer/rechercher un contact |\n| `pricebookName` | Nom du Pricebook utilisé pour filtrer le catalogue |\n\n## Séquence de test recommandée\n\n1. `Health – GET /health`\n2. `Accounts > Créer un compte` → note le statut (201 = créé, 409 = existe déjà)\n3. `Accounts > Modifier un compte`\n4. `Contacts > Auto-inscription` (rattaché au compte via `accountExternalId`)\n5. `Contacts > Modifier un contact`\n6. `Contacts > Contacts d'un compte`\n7. `Contracts > Créer un contrat`\n8. `Contracts > Modifier un contrat`\n9. `Contracts > Récupérer un contrat`\n10. `Catalogue > Rechercher des produits`\n11. `Commandes > Lister les commandes d'un compte`\n\n## Notes\n\n- Cette API ne fait **aucune** vérification OAuth : elle est protégée uniquement au niveau réseau/CORS (voir `ALLOWED_ORIGINS` côté Heroku). Ne pas exposer cette collection avec une base_url de prod sans restriction d'accès.\n- Les créations sont idempotentes par External Id : un doublon renvoie `409 { error: 'account_exists' | 'email_exists' | 'contract_exists' }`.\n- Les écritures alimentent la base Heroku Connect ; la remontée vers Salesforce se fait de façon asynchrone via Heroku Connect (`sync: 'pending'` dans la réponse), pas en synchrone dans l'appel.",
+    "description": "# LEGARANT SOCMOB – API Heroku\n\n## Objectif\n\nCette collection teste l'API REST maison exposée par l'app Heroku `Legarant-mobile-socmob` (fichier `server.js`), qui lit/écrit dans la base Postgres synchronisée par Heroku Connect (miroir des objets Salesforce Account/Contact/Contract/Order/Product2).\n\nElle est complémentaire à la collection **LEGARANT Connected app**, qui appelle directement l'API REST Salesforce via OAuth2 (Connected App). Ici, on ne parle jamais directement à Salesforce : on parle à l'app Heroku, qui elle-même lit la base répliquée.\n\n## Identifiants (important)\n\n`AXG_Account_Id__c` / `AXG_Contact_Id__c` / `AXG_Contract_Id__c` sont des champs **Auto-Number** côté Salesforce : leur valeur est toujours générée par Salesforce, jamais fournie par un client. L'API ne les utilise donc plus comme clé d'identification. À la place :\n\n- `id` : identifiant interne Heroku Connect, disponible **immédiatement** après une création (avant même la synchronisation vers Salesforce). Sert uniquement à interroger le statut de sync (`GET /.../:id/status`).\n- `sfid` : l'Id Salesforce réel, peuplé par Heroku Connect une fois la synchronisation terminée (`sync: 'pending'` → poller le statut jusqu'à ce que `sfid` soit non-null). C'est la clé à utiliser pour tous les PATCH/GET ultérieurs, et pour rattacher un Contact/Contract à un Account.\n\n## Variables d'environnement\n\n| Variable | Description |\n| --- | --- |\n| `base_url` | URL de base de l'app (ex: `https://<app>.herokuapp.com` ou `http://localhost:3000` en local) |\n| `accountId` | Id interne Heroku Connect du dernier compte créé (pour poller son statut de sync) |\n| `accountSfid` | Id Salesforce réel du compte, une fois synchronisé |\n| `contactId` | Id interne Heroku Connect du dernier contact créé |\n| `contactSfid` | Id Salesforce réel du contact, une fois synchronisé |\n| `contractId` | Id interne Heroku Connect du dernier contrat créé |\n| `contractSfid` | Id Salesforce réel du contrat, une fois synchronisé |\n| `contactEmail` | Email utilisé pour créer/rechercher un contact |\n| `pricebookName` | Nom du Pricebook utilisé pour filtrer le catalogue |\n\n## Séquence de test recommandée\n\n1. `Health – GET /health`\n2. `Accounts > Créer un compte` → capture `accountId`\n3. `Accounts > Statut de synchronisation` (rejouer jusqu'à `synced: true`) → capture `accountSfid`\n4. `Accounts > Modifier un compte`\n5. `Contacts > Auto-inscription` (rattaché au compte via `accountSfid`) → capture `contactId`\n6. `Contacts > Statut de synchronisation` → capture `contactSfid`\n7. `Contacts > Modifier un contact`\n8. `Accounts > Contacts d'un compte`\n9. `Contracts > Créer un contrat` → capture `contractId`\n10. `Contracts > Statut de synchronisation` → capture `contractSfid`\n11. `Contracts > Modifier un contrat`\n12. `Contracts > Récupérer un contrat`\n13. `Catalogue > Rechercher des produits`\n14. `Commandes > Lister les commandes d'un compte`\n\n## Notes\n\n- Cette API ne fait **aucune** vérification OAuth : elle est protégée uniquement au niveau réseau/CORS (voir `ALLOWED_ORIGINS` côté Heroku). Ne pas exposer cette collection avec une base_url de prod sans restriction d'accès.\n- Les créations de Contact restent idempotentes par email (`409 { error: 'email_exists' }`). Il n'y a en revanche plus de déduplication applicative sur Account/Contract à la création (l'ancienne dédup par External Id reposait sur le même champ Auto-Number cassé) — s'appuyer sur des règles de doublons côté Salesforce si nécessaire.\n- Les écritures alimentent la base Heroku Connect ; la remontée vers Salesforce se fait de façon asynchrone via Heroku Connect (`sync: 'pending'` dans la réponse), pas en synchrone dans l'appel — d'où les endpoints `/.../:id/status` à poller.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -31,9 +31,12 @@
   ],
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000" },
-    { "key": "axgAccountId", "value": "AXG-ACCT-90001" },
-    { "key": "axgContactId", "value": "AXG-C-90001" },
-    { "key": "axgContractId", "value": "AXG-CTR-90001" },
+    { "key": "accountId", "value": "" },
+    { "key": "accountSfid", "value": "" },
+    { "key": "contactId", "value": "" },
+    { "key": "contactSfid", "value": "" },
+    { "key": "contractId", "value": "" },
+    { "key": "contractSfid", "value": "" },
     { "key": "contactEmail", "value": "test.socmob@example.de" },
     { "key": "pricebookName", "value": "Standard Price Book" }
   ],
@@ -77,12 +80,13 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 créé ou 409 déjà existant', () => {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "pm.test('201 créé', () => {",
+                  "  pm.response.to.have.status(201);",
                   "});",
                   "if (pm.response.code === 201) {",
                   "  const body = pm.response.json();",
-                  "  pm.environment.set('axgAccountId', body.account.axg_account_id__c);",
+                  "  pm.environment.set('accountId', body.account.id);",
+                  "  if (body.account.sfid) pm.environment.set('accountSfid', body.account.sfid);",
                   "}"
                 ]
               }
@@ -93,7 +97,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"AXG SOCMOB Test GmbH\",\n  \"externalId\": \"{{axgAccountId}}\",\n  \"phone\": \"+49 30 555000\",\n  \"billingCity\": \"Berlin\",\n  \"active\": true\n}",
+              "raw": "{\n  \"name\": \"AXG SOCMOB Test GmbH\",\n  \"phone\": \"+49 30 555000\",\n  \"billingCity\": \"Berlin\",\n  \"active\": true\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{base_url}}/account", "host": ["{{base_url}}"], "path": ["account"] }
@@ -101,14 +105,41 @@
           "response": []
         },
         {
-          "name": "Modifier un compte (PATCH /account/:externalId)",
+          "name": "Statut de synchronisation (GET /account/:id/status)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 OK ou 404 si compte inconnu', () => {",
+                  "pm.test('200 OK', () => { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.sfid) pm.environment.set('accountSfid', body.sfid);",
+                  "console.log(body.synced ? 'Compte synchronisé, sfid=' + body.sfid : 'Toujours en attente (rejouer la requête) — last_op=' + body.last_op);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/account/{{accountId}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["account", "{{accountId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un compte (PATCH /account/:accountSfid)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si compte inconnu/pas encore synchronisé', () => {",
                   "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
                   "});"
                 ]
@@ -124,15 +155,15 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/account/{{axgAccountId}}",
+              "raw": "{{base_url}}/account/{{accountSfid}}",
               "host": ["{{base_url}}"],
-              "path": ["account", "{{axgAccountId}}"]
+              "path": ["account", "{{accountSfid}}"]
             }
           },
           "response": []
         },
         {
-          "name": "Contacts d'un compte (GET /account/:externalId/contacts)",
+          "name": "Contacts d'un compte (GET /account/:accountSfid/contacts)",
           "event": [
             {
               "listen": "test",
@@ -151,9 +182,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/account/{{axgAccountId}}/contacts?active=true",
+              "raw": "{{base_url}}/account/{{accountSfid}}/contacts?active=true",
               "host": ["{{base_url}}"],
-              "path": ["account", "{{axgAccountId}}", "contacts"],
+              "path": ["account", "{{accountSfid}}", "contacts"],
               "query": [{ "key": "active", "value": "true" }]
             }
           },
@@ -177,7 +208,8 @@
                   "});",
                   "if (pm.response.code === 201) {",
                   "  const body = pm.response.json();",
-                  "  pm.environment.set('axgContactId', body.contact.sfid);",
+                  "  pm.environment.set('contactId', body.contact.id);",
+                  "  if (body.contact.sfid) pm.environment.set('contactSfid', body.contact.sfid);",
                   "}"
                 ]
               }
@@ -188,7 +220,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"firstName\": \"SOCMOB\",\n  \"lastName\": \"Test\",\n  \"email\": \"{{contactEmail}}\",\n  \"mobile\": \"+49 170 0000000\",\n  \"accountExternalId\": \"{{axgAccountId}}\"\n}",
+              "raw": "{\n  \"firstName\": \"SOCMOB\",\n  \"lastName\": \"Test\",\n  \"email\": \"{{contactEmail}}\",\n  \"mobile\": \"+49 170 0000000\",\n  \"accountSfid\": \"{{accountSfid}}\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{base_url}}/register", "host": ["{{base_url}}"], "path": ["register"] }
@@ -196,14 +228,41 @@
           "response": []
         },
         {
-          "name": "Modifier un contact (PATCH /contact/:externalId)",
+          "name": "Statut de synchronisation (GET /contact/:id/status)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 OK ou 404 si contact inconnu', () => {",
+                  "pm.test('200 OK', () => { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.sfid) pm.environment.set('contactSfid', body.sfid);",
+                  "console.log(body.synced ? 'Contact synchronisé, sfid=' + body.sfid : 'Toujours en attente (rejouer la requête) — last_op=' + body.last_op);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contact/{{contactId}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["contact", "{{contactId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un contact (PATCH /contact/:contactSfid)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si contact inconnu/pas encore synchronisé', () => {",
                   "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
                   "});"
                 ]
@@ -219,9 +278,9 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/contact/{{axgContactId}}",
+              "raw": "{{base_url}}/contact/{{contactSfid}}",
               "host": ["{{base_url}}"],
-              "path": ["contact", "{{axgContactId}}"]
+              "path": ["contact", "{{contactSfid}}"]
             }
           },
           "response": []
@@ -265,9 +324,14 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 créé, 404 compte inconnu ou 409 déjà existant', () => {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201, 404, 409]);",
-                  "});"
+                  "pm.test('201 créé ou 404 compte inconnu/pas encore synchronisé', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 404]);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.environment.set('contractId', body.contract.id);",
+                  "  if (body.contract.sfid) pm.environment.set('contractSfid', body.contract.sfid);",
+                  "}"
                 ]
               }
             }
@@ -277,7 +341,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"accountExternalId\": \"{{axgAccountId}}\",\n  \"externalId\": \"{{axgContractId}}\",\n  \"startDate\": \"2026-01-01\",\n  \"status\": \"Draft\"\n}",
+              "raw": "{\n  \"accountSfid\": \"{{accountSfid}}\",\n  \"startDate\": \"2026-01-01\",\n  \"status\": \"Draft\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{base_url}}/contract", "host": ["{{base_url}}"], "path": ["contract"] }
@@ -285,14 +349,41 @@
           "response": []
         },
         {
-          "name": "Modifier un contrat (PATCH /contract/:externalId)",
+          "name": "Statut de synchronisation (GET /contract/:id/status)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('200 OK ou 404 si contrat inconnu', () => {",
+                  "pm.test('200 OK', () => { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.sfid) pm.environment.set('contractSfid', body.sfid);",
+                  "console.log(body.synced ? 'Contrat synchronisé, sfid=' + body.sfid : 'Toujours en attente (rejouer la requête) — last_op=' + body.last_op);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contract/{{contractId}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["contract", "{{contractId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un contrat (PATCH /contract/:contractSfid)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si contrat inconnu/pas encore synchronisé', () => {",
                   "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
                   "});"
                 ]
@@ -308,15 +399,15 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": {
-              "raw": "{{base_url}}/contract/{{axgContractId}}",
+              "raw": "{{base_url}}/contract/{{contractSfid}}",
               "host": ["{{base_url}}"],
-              "path": ["contract", "{{axgContractId}}"]
+              "path": ["contract", "{{contractSfid}}"]
             }
           },
           "response": []
         },
         {
-          "name": "Récupérer un contrat (GET /contract/:axgContractId)",
+          "name": "Récupérer un contrat (GET /contract/:contractSfid)",
           "event": [
             {
               "listen": "test",
@@ -334,9 +425,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/contract/{{axgContractId}}",
+              "raw": "{{base_url}}/contract/{{contractSfid}}",
               "host": ["{{base_url}}"],
-              "path": ["contract", "{{axgContractId}}"]
+              "path": ["contract", "{{contractSfid}}"]
             }
           },
           "response": []
@@ -383,7 +474,7 @@
       "name": "Commandes",
       "item": [
         {
-          "name": "Lister les commandes d'un compte (GET /orders/:accountExternalId)",
+          "name": "Lister les commandes d'un compte (GET /orders/:accountSfid)",
           "event": [
             {
               "listen": "test",
@@ -401,9 +492,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/orders/{{axgAccountId}}",
+              "raw": "{{base_url}}/orders/{{accountSfid}}",
               "host": ["{{base_url}}"],
-              "path": ["orders", "{{axgAccountId}}"]
+              "path": ["orders", "{{accountSfid}}"]
             }
           },
           "response": []
