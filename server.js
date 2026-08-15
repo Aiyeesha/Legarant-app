@@ -1,20 +1,43 @@
 // server.js — LEGARANT SOCMOB (Heroku)
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { Pool } = require('pg');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 /* ---------- middlewares ---------- */
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '512kb' }));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email,X-Api-Key');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+app.use(rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
+  max: Number(process.env.RATE_LIMIT_MAX) || 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
+
+/* ---------- auth (clé API sur les écritures) ---------- */
+const API_KEY = process.env.API_KEY || '';
+if (!API_KEY) {
+  console.warn('[SOCMOB] API_KEY non défini : les routes POST/PATCH ne sont pas protégées. Voir README > Sécurité.');
+}
+const requireApiKey = (req, res, next) => {
+  if (!API_KEY) return next(); // non configuré = comportement historique (non protégé)
+  const provided = req.get('X-Api-Key') || '';
+  if (provided !== API_KEY) return res.status(401).json({ error: 'invalid_or_missing_api_key' });
+  next();
+};
 
 /* ---------- static front ---------- */
 const publicDir = path.join(__dirname, 'public');
@@ -25,7 +48,9 @@ app.get('/health', (_req, res) => res.type('text').send('OK'));
 /* ---------- DB (Heroku Postgres via Heroku Connect) ---------- */
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { require: true, rejectUnauthorized: false },
+  // Heroku Postgres utilise des certificats auto-signés par défaut : rejectUnauthorized
+  // doit rester à false sauf si un certificat CA valide est fourni côté client.
+  ssl: { require: true, rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true' },
 });
 
 /* ---------- utils ---------- */
@@ -36,7 +61,7 @@ const pick = (obj, allowed) => Object.fromEntries(
 
 /* ======================= API ======================= */
 /* POST /account — créer un Account sans contact */
-app.post('/account', async (req, res) => {
+app.post('/account', requireApiKey, async (req, res) => {
   try {
     const { name, externalId, phone, billingCity, active = true } = req.body || {};
     if (!name || !externalId) return res.status(400).json({ error: 'name_and_externalId_required' });
@@ -62,7 +87,7 @@ app.post('/account', async (req, res) => {
 });
 
 /* POST /register — créer un Contact (option : rattacher via Account External Id) */
-app.post('/register', async (req, res) => {
+app.post('/register', requireApiKey, async (req, res) => {
   try {
     const { firstName, lastName, email, mobile, accountExternalId } = req.body || {};
     if (!isEmail(email)) return res.status(400).json({ error: 'invalid_email' });
@@ -98,7 +123,7 @@ app.post('/register', async (req, res) => {
 });
 
 /* PATCH /contact/:externalId — mise à jour partielle d’un Contact (AXG_Contact_Id__c) */
-app.patch('/contact/:externalId', async (req, res) => {
+app.patch('/contact/:externalId', requireApiKey, async (req, res) => {
   const { externalId } = req.params;
   if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
 
@@ -140,7 +165,7 @@ app.patch('/contact/:externalId', async (req, res) => {
 });
 
 /* PATCH /account/:externalId — mise à jour partielle d’un Account (AXG_Account_Id__c) */
-app.patch('/account/:externalId', async (req, res) => {
+app.patch('/account/:externalId', requireApiKey, async (req, res) => {
   const { externalId } = req.params;
   if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
 
@@ -184,7 +209,7 @@ app.patch('/account/:externalId', async (req, res) => {
 });
 
 // ---------- POST /contract ----------
-app.post('/contract', async (req, res) => {
+app.post('/contract', requireApiKey, async (req, res) => {
   try {
     const { accountExternalId, externalId, startDate, endDate, status } = req.body || {};
 
@@ -223,7 +248,7 @@ app.post('/contract', async (req, res) => {
 });
 
 // ---------- PATCH /contract/:externalId ----------
-app.patch('/contract/:externalId', async (req, res) => {
+app.patch('/contract/:externalId', requireApiKey, async (req, res) => {
   const { externalId } = req.params;
   if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
 
