@@ -1,0 +1,544 @@
+{
+	"info": {
+		"_postman_id": "5e4e0236-2994-48f9-a85f-5990125f1595",
+		"name": "LEGARANT Connected app",
+		"description": "# LEGARANT AXG Integration – Documentation Postman\n\n## 🎯 Objectif\n\nCette collection Postman permet de tester et démontrer l'intégration **bidirectionnelle** entre **AXG** et **Salesforce**, en appelant **directement l'API Salesforce** via le **Connected App** `Legarant_AXG_ConnectedApp` (OAuth 2.0). Elle est complémentaire à la collection **LEGARANT SOCMOB – API Heroku (apiret)**, qui elle appelle l'app Heroku (laquelle lit/écrit dans la base répliquée par Heroku Connect).\n\n- Authentification via **OAuth 2.0** (Password & Client Credentials).\n- Gestion des objets **Account, Contact, Contract** avec **External Ids**.\n- Support des opérations **GET / POST / PATCH**.\n- Mise en place d'un **soft delete** (désactivation au lieu de suppression) sur Account et Contact.\n- Requêtes **SOQL** pour la récupération de données (retour SF → AXG).\n- Appel de l'API REST personnalisée **Apex REST `/v1/signup`** (classe `SignupApi`), utilisée comme point d'entrée alternatif pour l'auto-inscription.\n- Scénarios **négatifs** (doublon bloqué, ressource introuvable) pour vérifier le comportement d'erreur.\n\n---\n\n## 📂 Structure de la collection\n\n### Auth\n\n- **Auth – Password** : flux OAuth Username-Password (PoC).\n- **Auth – Client Credentials** : flux serveur-à-serveur (recommandé en production).\n\n### Accounts\n\n- **GET Account by External Id**\n- **POST Account** (création simple)\n- **PATCH Upsert Account** (création/mise à jour par External Id)\n- **PATCH Soft Delete Account** (`Active__c=No`)\n- **GET Account by External Id — Not Found (négatif)**\n\n### Contacts\n\n- **POST Contact** (lié à un Account via External Id)\n- **PATCH Upsert Contact** (mise à jour)\n- **PATCH Soft Delete Contact** (`Active__c=false`)\n- **POST Contact — Doublon email (négatif, bloqué par la Duplicate Rule)**\n\n### Contracts\n\n- **POST Contract** (lié à Account & Contact)\n- **PATCH Upsert Contract**\n\n### Apex REST\n\n- **POST Signup (Apex REST /v1/signup)** : point d'entrée alternatif d'auto-inscription, implémenté par la classe `SignupApi.cls` (upsert Account+Contact en une seule requête applicative).\n\n### Queries\n\n- **GET Accounts modified since** (deltas via LastModifiedDate)\n- **GET Active Contacts by Account**\n\n---\n\n## ⚙️ Variables d'environnement\n\nUtiliser **LEGARANT_AXG_Sandbox.postman_environment.json** :\n\n| Variable | Description |\n| --- | --- |\n| `login_url` | URL login OAuth (sandbox : `https://test.salesforce.com`) |\n| `api_version` | Version API (ex. `v64.0`) |\n| `client_id` | Consumer Key (Connected App) |\n| `client_secret` | Consumer Secret (Connected App) |\n| `username` | User Salesforce (Password flow) |\n| `password` | Mot de passe utilisateur |\n| `security_token` | Security token si IP non approuvée |\n| `access_token` | Stocké automatiquement après auth |\n| `instance_url` | Stocké automatiquement après auth |\n| `axgAccountId` | External Id Account (ex: `AXG-ACCT-10001`) |\n| `axgContactId` | External Id Contact (ex: `AXG-C-90001`) |\n| `axgContractId` | External Id Contract (ex: `AXG-CTR-70001`) |\n| `sinceIso` | Date ISO pour filtre delta |\n| `email` | Email utilisé pour les recherches et le test Apex REST |\n\n---\n\n## 🔄 Séquence de test (démo)\n\n1. `Auth – Client Credentials` → obtenir le token.\n2. `POST Account` → création d'un compte AXG.\n3. `GET Account by External Id` → vérifier la création.\n4. `POST Contact` → créer un contact lié au compte.\n5. `POST Contract` → créer un contrat lié au compte + contact.\n6. `PATCH Upsert Contact` → mettre à jour le contact.\n7. `PATCH Soft Delete Contact` → désactiver le contact.\n8. `GET Active Contacts by Account` → vérifier la désactivation.\n9. `GET Accounts modified since` → récupérer les deltas.\n10. `POST Signup (Apex REST)` → tester le point d'entrée alternatif.\n11. `PATCH Soft Delete Account` → désactiver le compte de test.\n12. Scénarios négatifs : `GET Account by External Id — Not Found`, `POST Contact — Doublon email`.\n\n---\n\n## ✅ Bonnes pratiques\n\n- Utiliser systématiquement les **External Ids** (`AXG_...__c`) pour les upserts.\n- **Jamais de DELETE dur** → utiliser le **soft delete** (`Active__c=false`/`No`).\n- Utiliser **composite/sobjects** pour traiter jusqu'à 200 enregistrements en batch.\n- En PoC : récupérer les deltas via SOQL ; en production : préférer **Change Data Capture**.\n- Limiter les droits de l'utilisateur d'intégration (API Enabled + CRUD/FLS minimaux) — voir le permission set `INTG_API_Policies`.\n- La Duplicate Rule `Contact_Prevent_Duplicates` bloque la création (pas la mise à jour) d'un Contact dont l'email correspond à un contact existant : un `POST Contact` en doublon doit être traité comme un cas d'erreur applicatif, pas relancé en boucle.\n\n---\n\n## 🔗 Références\n\n- [REST API – sObjects](https://null)\n- [Composite sObject Collections](https://null)\n- [OAuth 2.0 Flows](https://null)\n- [Change Data Capture](https://null)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "38309383"
+	},
+	"item": [
+		{
+			"name": "Auth - Get Access Token (password)",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const must = [\"api_version\",\"access_token\"];\r",
+							"const miss = must.filter(k => !pm.environment.get(k));\r",
+							"if (miss.length && pm.request.url.toString().includes('/oauth2/token') === false) {\r",
+							"  pm.execution.setNextRequest(null);\r",
+							"  throw new Error(\"Variables manquantes: \" + miss.join(\", \"));\r",
+							"}\r",
+							"// Authorization auto si absent\r",
+							"if (!pm.request.headers.has(\"Authorization\") && pm.environment.get(\"access_token\")) {\r",
+							"  pm.request.headers.add({ key: \"Authorization\", value: `${pm.environment.get(\"token_type\")||\"Bearer\"} ${pm.environment.get(\"access_token\")}` });\r",
+							"}\r",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"let data = pm.response.json();\r",
+							"pm.environment.set(\"access_token\", data.access_token);\r",
+							"pm.environment.set(\"instance_url\", data.instance_url);\r",
+							"pm.environment.set(\"token_type\", \"Bearer\");"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{ "key": "grant_type", "value": "password", "type": "text" },
+						{ "key": "client_id", "value": "{{client_id}}", "type": "text" },
+						{ "key": "client_secret", "value": "{{client_secret}}", "type": "text" },
+						{ "key": "username", "value": "{{username}}", "type": "text" },
+						{ "key": "password", "value": "{{password}}{{security_token}}", "type": "text" }
+					]
+				},
+				"url": {
+					"raw": "{{login_url}}/services/oauth2/token",
+					"host": ["{{login_url}}"],
+					"path": ["services", "oauth2", "token"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Auth - Get Access Token (client_credentials)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"let data = pm.response.json();\r",
+							"pm.environment.set(\"access_token\", data.access_token);\r",
+							"pm.environment.set(\"instance_url\", data.instance_url);\r",
+							"pm.environment.set(\"token_type\", \"Bearer\");"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const must = [\"api_version\",\"access_token\"];\r",
+							"const miss = must.filter(k => !pm.environment.get(k));\r",
+							"if (miss.length && pm.request.url.toString().includes('/oauth2/token') === false) {\r",
+							"  pm.execution.setNextRequest(null);\r",
+							"  throw new Error(\"Variables manquantes: \" + miss.join(\", \"));\r",
+							"}\r",
+							"// Authorization auto si absent\r",
+							"if (!pm.request.headers.has(\"Authorization\") && pm.environment.get(\"access_token\")) {\r",
+							"  pm.request.headers.add({ key: \"Authorization\", value: `${pm.environment.get(\"token_type\")||\"Bearer\"} ${pm.environment.get(\"access_token\")}` });\r",
+							"}\r",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{ "key": "grant_type", "value": "client_credentials", "type": "text" },
+						{ "key": "client_id", "value": "{{client_id}}", "type": "text" },
+						{ "key": "client_secret", "value": "{{client_secret}}", "type": "text" }
+					]
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/oauth2/token",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "oauth2", "token"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upsert Account (PATCH)",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "\n{\n  \"Name\": \"AXG Muster GmbH\",\n  \"AccountNumber\": \"DE-99812\",\n  \"Active__c\": \"Yes\",\n  \"BillingStreet\": \"Invalidenstraße 116\",\n  \"BillingCity\": \"Berlin\",\n  \"BillingPostalCode\": \"10115\",\n  \"BillingCountry\": \"DE\",\n  \"Phone\": \"+49 30 123456\",\n  \"Website\": \"https://axg-Muster-insurance.de\"\n  \n}\n"
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Account/AXG_Account_Id__c/{{axgAccountId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Account", "AXG_Account_Id__c", "{{axgAccountId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Account by External Id",
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Account/AXG_Account_Id__c/{{axgAccountId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Account", "AXG_Account_Id__c", "{{axgAccountId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PATCH Upsert Account",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": { "mode": "raw", "raw": "{ \"Phone\":\"+49 341 9999999\" }" },
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Account/AXG_Account_Id__c/{{axgAccountId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Account", "AXG_Account_Id__c", "{{axgAccountId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PATCH Soft Delete Account",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('Compte désactivé (204)', () => {",
+							"  pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": { "mode": "raw", "raw": "{ \"Active__c\": \"No\" }" },
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Account/AXG_Account_Id__c/{{axgAccountId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Account", "AXG_Account_Id__c", "{{axgAccountId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Account by External Id — Not Found (négatif)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('404 Not Found pour un External Id inexistant', () => {",
+							"  pm.response.to.have.status(404);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Account/AXG_Account_Id__c/AXG-ACCT-DOES-NOT-EXIST",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Account", "AXG_Account_Id__c", "AXG-ACCT-DOES-NOT-EXIST"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "POST Contact",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"AXG_Contact_Id__c\":\"AXG-C-90016\",\n  \"FirstName\": \"Erika\",\n      \"LastName\": \"Mustermann\",\n      \"Email\": \"erika.mustermann@example.de\",\n      \"Active__c\": true,\n      \"Languages__c\": \"de\",\n  \"Account\": { \"AXG_Account_Id__c\": \"AXG-ACCT-10001\" }\n}"
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contact",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contact"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "POST Contact — Doublon email (négatif, bloqué par la Duplicate Rule)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('400 DUPLICATES_DETECTED (rejeté par Contact_Prevent_Duplicates)', () => {",
+							"  pm.response.to.have.status(400);",
+							"  const body = pm.response.json();",
+							"  const errorCodes = Array.isArray(body) ? body.map(e => e.errorCode) : [body.errorCode];",
+							"  pm.expect(errorCodes).to.include('DUPLICATES_DETECTED');",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"FirstName\": \"Erika\",\n  \"LastName\": \"Mustermann\",\n  \"Email\": \"erika.mustermann@example.de\"\n}"
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contact",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contact"]
+				},
+				"description": "Réutilise volontairement l'email du contact créé par la requête `POST Contact` pour vérifier que la Duplicate Rule `Contact_Prevent_Duplicates` (actionOnInsert=Block) rejette bien la création."
+			},
+			"response": []
+		},
+		{
+			"name": "PATCH Soft Delete Contact",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": { "mode": "raw", "raw": "{ \"Active__c\":false }" },
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contact/AXG_Contact_Id__c/{{axgContactId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contact", "AXG_Contact_Id__c", "{{axgContactId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PATCH Upsert Contact",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": { "mode": "raw", "raw": "{ \"Phone\":\"+49 160 1112223\", \"Active__c\":true }" },
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contact/AXG_Contact_Id__c/{{axgContactId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contact", "AXG_Contact_Id__c", "{{axgContactId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "POST Contract",
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"AXG_Contract_Id__c\":\"{{axgContractId}}\",\n  \"Account\": { \"AXG_Account_Id__c\":\"{{axgAccountId}}\" },\n  \"StartDate\":\"2025-09-01\",\n  \"ContractTerm\":\"22\",\n  \"Status\":\"Draft\"\n}\n"
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contract",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contract"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "PATCH Upsert Contract",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": { "mode": "raw", "raw": "{ \"Status\":\"Activated\", \"ActivatedDate\":\"2025-09-01T10:00:00Z\" }" },
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/sobjects/Contract/AXG_Contract_Id__c/{{axgContractId}}",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "sobjects", "Contract", "AXG_Contract_Id__c", "{{axgContractId}}"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "POST Signup (Apex REST /v1/signup)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"pm.test('200 OK et ok=true', () => {",
+							"  pm.response.to.have.status(200);",
+							"  pm.expect(pm.response.json().ok).to.eql(true);",
+							"});"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{ "key": "Authorization", "value": "Bearer {{access_token}}" },
+					{ "key": "Content-Type", "value": "application/json" }
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"FirstName\": \"Signup\",\n  \"LastName\": \"ApexTest\",\n  \"Email\": \"{{email}}\",\n  \"MobilePhone\": \"+49 170 5550000\",\n  \"AccountName\": \"AXG SOCMOB Test GmbH\"\n}"
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/apexrest/v1/signup",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "apexrest", "v1", "signup"]
+				},
+				"description": "Appelle la classe Apex REST `SignupApi.createContact()` (`@RestResource(urlMapping='/v1/signup')`), point d'entrée alternatif d'auto-inscription qui crée/rattache l'Account puis le Contact en une seule requête applicative. Renvoie 400 si Email/LastName manquants, 409 si l'email existe déjà."
+			},
+			"response": []
+		},
+		{
+			"name": "SOQL - Contrôle Dédoublonnage Email",
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "{{token_type}} {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/query?q=SELECT Id,Email FROM Contact WHERE Email='anna.schmidt@example.de'",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "query"],
+					"query": [{ "key": "q", "value": "SELECT Id,Email FROM Contact WHERE Email='anna.schmidt@example.de'" }]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Active Contacts by Account",
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/query?q=SELECT+Id,FirstName,LastName,Email,Active__c,AXG_Contact_Id__c+FROM+Contact+WHERE+Account.AXG_Account_Id__c='{{axgAccountId}}'+AND+Active__c=true",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "query"],
+					"query": [{ "key": "q", "value": "SELECT+Id,FirstName,LastName,Email,Active__c,AXG_Contact_Id__c+FROM+Contact+WHERE+Account.AXG_Account_Id__c='{{axgAccountId}}'+AND+Active__c=true" }]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "SOQL - Get Contact by Email",
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/query?q=SELECT+Id,Email+FROM+Contact+WHERE+Email='{{email}}'",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "query"],
+					"query": [{ "key": "q", "value": "SELECT+Id,Email+FROM+Contact+WHERE+Email='{{email}}'" }]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET Accounts modified since",
+			"request": {
+				"method": "GET",
+				"header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/query?q=SELECT+Id,Name,AXG_Account_Id__c,LastModifiedDate+FROM+Account+WHERE+LastModifiedDate%3E={{sinceIso}}+ORDER+BY+LastModifiedDate+DESC+LIMIT+2000",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "query"],
+					"query": [{ "key": "q", "value": "SELECT+Id,Name,AXG_Account_Id__c,LastModifiedDate+FROM+Account+WHERE+LastModifiedDate%3E={{sinceIso}}+ORDER+BY+LastModifiedDate+DESC+LIMIT+2000" }]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Account — batch upsert par AXG_Account_Id__c",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"allOrNone\": false,\r\n  \"records\": [\r\n    {\r\n      \"attributes\": { \"type\": \"Account\" },\r\n      \"AXG_Account_Id__c\": \"AXG-ACCT-10001\",\r\n      \"Name\": \"LEGARANT Deutschland GmbH\",\r\n      \"Phone\": \"+49 40 123456\",\r\n      \"Website\": \"https://legarant.de\",\r\n      \"BillingStreet\": \"Gänsemarkt 1\",\r\n      \"BillingCity\": \"Hamburg\",\r\n      \"BillingPostalCode\": \"20095\",\r\n      \"BillingCountry\": \"DE\"\r\n    },\r\n    {\"attributes\": { \"type\": \"Account\" },\r\n     \"AXG_Account_Id__c\": \"AXG-ACCT-10003\",\r\n     \"Name\":\"AXG Leipzig GmbH\",\r\n     \"BillingCity\":\"Leipzig\",\r\n      \"Website\": \"https://legarant.de\",\r\n      \"BillingStreet\": \"Gänsemarkt 1\",\r\n      \"BillingCity\": \"Hamburg\",\r\n      \"BillingPostalCode\": \"20095\",\r\n      \"BillingCountry\": \"DE\"\r\n},\r\n    {\r\n      \"attributes\": { \"type\": \"Account\" },\r\n      \"AXG_Account_Id__c\": \"AXG-ACCT-10002\",\r\n      \"Name\": \"AXG Lebensversicherung AG\",\r\n      \"Phone\": \"+49 89 987654\",\r\n      \"BillingCity\": \"München\",\r\n      \"BillingCountry\": \"DE\"\r\n    }\r\n  ]\r\n}\r\n",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/composite/sobjects/Account/AXG_Account_Id__c",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "composite", "sobjects", "Account", "AXG_Account_Id__c"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Contact — batch upsert par AXG_Contact_Id__c",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"allOrNone\": false,\r\n  \"records\": [\r\n    { \"attributes\": {\"type\":\"Contact\"}, \r\n      \"AXG_Contact_Id__c\":\"AXG-000001\", \r\n      \"FirstName\":\"Anna\", \r\n      \"LastName\":\"Schmidt\", \r\n      \"Account\": { \"AXG_Account_Id__c\": \"AXG-ACCT-10001\"},\r\n      \"Email\":\"anna.schmidt@example.de\", \r\n      \"Active__c\": true },\r\n\r\n    { \"attributes\": {\"type\":\"Contact\"}, \r\n    \"AXG_Contact_Id__c\":\"AXG-000002\", \r\n    \"FirstName\":\"Markus\", \r\n    \"LastName\":\"Weber\", \r\n    \"Email\":\"markus.weber@example.de\", \r\n    \"Active__c\": true }\r\n  ]\r\n}\r\n",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/composite/sobjects/Contact/AXG_Contact_Id__c",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "composite", "sobjects", "Contact", "AXG_Contact_Id__c"]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Contract — batch upsert par AXG_Contract_Id__c",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"allOrNone\": false,\r\n  \"records\": [\r\n    {\r\n      \"attributes\": { \"type\": \"Contract\" },\r\n      \"AXG_Contract_Id__c\": \"AXG-CTR-70001\",\r\n      \"Account\": { \"AXG_Account_Id__c\": \"AXG-ACCT-10001\" },\r\n      \"StartDate\": \"2025-01-01\",\r\n      \"Status\": \"Activated\",\r\n      \"ContractTerm\": 24,\r\n      \"CustomerSignedTitle\": \"Herr\"\r\n    },\r\n    {\r\n      \"attributes\": { \"type\": \"Contract\" },\r\n      \"AXG_Contract_Id__c\": \"AXG-CTR-70002\",\r\n      \"Account\": { \"AXG_Account_Id__c\": \"AXG-ACCT-10002\" },\r\n      \"StartDate\": \"2025-04-01\",\r\n      \"Status\": \"Activated\",\r\n      \"ContractTerm\": 36\r\n    },\r\n{\r\n  \"AXG_Contract_Id__c\": \"AXG-CTR-70003\",\r\n  \"Account\": { \"AXG_Account_Id__c\": \"AXG-ACCT-10001\" },\r\n  \"StartDate\": \"2025-01-01\",\r\n  \"ContractTerm\": 24,\r\n  \"Status\": \"Draft\",\r\n  \"CustomerSignedTitle\": \"Herr\"\r\n}\r\n  ]\r\n}\r\n",
+					"options": { "raw": { "language": "json" } }
+				},
+				"url": {
+					"raw": "{{instance_url}}/services/data/{{api_version}}/composite/sobjects/Contract/AXG_Contract_Id__c",
+					"host": ["{{instance_url}}"],
+					"path": ["services", "data", "{{api_version}}", "composite", "sobjects", "Contract", "AXG_Contract_Id__c"]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					"const required = [\"api_version\",\"client_id\",\"access_token\",\"instance_url\"];\r",
+					"const missing = required.filter(k => !pm.environment.get(k));\r",
+					"if (missing.length) {\r",
+					"  pm.execution.setNextRequest(null);\r",
+					"  throw new Error(\"Variables manquantes: \" + missing.join(\", \"));\r",
+					"}\r",
+					"// Header Auth automatique si absent\r",
+					"if (!pm.request.headers.has(\"Authorization\")) {\r",
+					"  pm.request.headers.add({ key: \"Authorization\", value: `${pm.environment.get(\"token_type\")||\"Bearer\"} ${pm.environment.get(\"access_token\")}` });\r",
+					"}\r",
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					"pm.test('HTTP OK', () => pm.expect(pm.response.code).to.be.oneOf([200,201,204,400,404]));\r",
+					"const lim = pm.response.headers.get('Sforce-Limit-Info');\r",
+					"if (lim) console.log('API Limits:', lim);"
+				]
+			}
+		}
+	]
+}
