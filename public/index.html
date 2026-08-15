@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LEGARANT – SOCMOB Console</title>
+  <link rel="icon" href="./favicon.ico" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -50,6 +51,22 @@
         <button class="menu-toggle" id="menuToggle" aria-label="Ouvrir le menu">☰</button>
         <h1 id="viewTitle">Santé API</h1>
         <span class="badge" id="apiBadge">API —</span>
+        <button class="icon-btn" id="themeToggle" type="button" aria-pressed="false" aria-label="Basculer le thème sombre">🌙</button>
+        <div class="settings-wrap">
+          <button class="icon-btn" id="settingsToggle" type="button" aria-label="Paramètres">⚙️</button>
+          <div class="settings-panel" id="settingsPanel">
+            <form id="formApiKey">
+              <label>Clé API (X-Api-Key)
+                <input id="apiKeyInput" type="password" placeholder="Laisser vide si non requise" autocomplete="off" />
+              </label>
+              <p id="apiKeyStatus" class="hint">Aucune clé API définie</p>
+              <div class="settings-actions">
+                <button type="submit">Enregistrer</button>
+                <button type="button" id="btnClearApiKey" class="btn-ghost">Effacer</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </header>
 
       <main class="content">
