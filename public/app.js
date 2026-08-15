@@ -172,9 +172,26 @@ $('#formAccount').addEventListener('submit', async (e) => {
       const r = await apiFetch('/account', { method: 'POST', body: JSON.stringify(body) });
       const json = await r.json().catch(()=>({}));
       show($('#outAccount'), { status: r.status, ...json }, r.ok);
+      if (r.ok && json.account?.id != null) $('#accStatusId').value = json.account.id;
     } catch (e2) { show($('#outAccount'), { error: e2.message }, false); }
   });
 });
+
+/* ================= Account sync status ================= */
+$('#btnAccStatus').addEventListener('click', () => withButtonLoading($('#btnAccStatus'), async () => {
+  const id = $('#accStatusId').value.trim();
+  if (!id) return show($('#outAccStatus'), { error: 'Id requis' }, false);
+  try {
+    const r = await apiFetch(`/account/${encodeURIComponent(id)}/status`);
+    const json = await r.json().catch(()=>({}));
+    show($('#outAccStatus'), { status: r.status, ...json }, r.ok && json.synced);
+    if (r.ok && json.sfid) {
+      $('#accExtId').value = json.sfid;
+      const patchSfid = document.querySelector('#formPatchAccount [name="sfid"]');
+      if (patchSfid) patchSfid.value = json.sfid;
+    }
+  } catch (e) { show($('#outAccStatus'), { error: e.message }, false); }
+}));
 
 /* ================= Register Contact ================= */
 $('#formRegister').addEventListener('submit', async (e) => {
@@ -188,9 +205,25 @@ $('#formRegister').addEventListener('submit', async (e) => {
       const r = await apiFetch('/register', { method: 'POST', body: JSON.stringify(body) });
       const json = await r.json().catch(()=>({}));
       show($('#outRegister'), { status: r.status, ...json }, r.ok);
+      if (r.ok && json.contact?.id != null) $('#contactStatusId').value = json.contact.id;
     } catch (e) { show($('#outRegister'), { error: e.message }, false); }
   });
 });
+
+/* ================= Contact sync status ================= */
+$('#btnContactStatus').addEventListener('click', () => withButtonLoading($('#btnContactStatus'), async () => {
+  const id = $('#contactStatusId').value.trim();
+  if (!id) return show($('#outContactStatus'), { error: 'Id requis' }, false);
+  try {
+    const r = await apiFetch(`/contact/${encodeURIComponent(id)}/status`);
+    const json = await r.json().catch(()=>({}));
+    show($('#outContactStatus'), { status: r.status, ...json }, r.ok && json.synced);
+    if (r.ok && json.sfid) {
+      const patchSfid = document.querySelector('#formPatchContact [name="sfid"]');
+      if (patchSfid) patchSfid.value = json.sfid;
+    }
+  } catch (e) { show($('#outContactStatus'), { error: e.message }, false); }
+}));
 
 /* ================= Lookup contact by email ================= */
 $('#btnLookup').addEventListener('click', () => withButtonLoading($('#btnLookup'), async () => {
@@ -207,14 +240,14 @@ $('#btnLookup').addEventListener('click', () => withButtonLoading($('#btnLookup'
 $('#btnAccContacts').addEventListener('click', () => withButtonLoading($('#btnAccContacts'), async () => {
   const ext = $('#accExtId').value.trim();
   const active = $('#accActive').value;
-  if (!ext) return show($('#outAccContacts'), { error: 'External Id requis' }, false);
+  if (!ext) return show($('#outAccContacts'), { error: 'Sfid requis' }, false);
   const q = active ? `?active=${active}` : '';
   try {
     const r = await apiFetch(`/account/${encodeURIComponent(ext)}/contacts${q}`);
     const json = await r.json().catch(()=>([]));
     const rows = Array.isArray(json) ? json : [];
     renderTable($('#tblAccContacts'), rows, [
-      { key: 'axg_contact_id__c', label: 'External Id' },
+      { key: 'sfid', label: 'Sfid' },
       { key: 'firstname', label: 'Prénom' },
       { key: 'lastname', label: 'Nom' },
       { key: 'email', label: 'Email' },
@@ -224,10 +257,10 @@ $('#btnAccContacts').addEventListener('click', () => withButtonLoading($('#btnAc
   } catch (e) { show($('#outAccContacts'), { error: e.message }, false); }
 }));
 
-/* ================= Contract by external id ================= */
+/* ================= Contract by sfid ================= */
 $('#btnContract').addEventListener('click', () => withButtonLoading($('#btnContract'), async () => {
   const id = $('#contractExtId').value.trim();
-  if (!id) return show($('#outContract'), { error: 'External Id requis' }, false);
+  if (!id) return show($('#outContract'), { error: 'Sfid requis' }, false);
   try {
     const r = await apiFetch(`/contract/${encodeURIComponent(id)}`);
     const json = await r.json().catch(()=>({}));
@@ -260,7 +293,7 @@ $('#btnProducts').addEventListener('click', () => withButtonLoading($('#btnProdu
 $('#btnOrders').addEventListener('click', () => withButtonLoading($('#btnOrders'), async () => {
   const acc = $('#ordersAccExtId').value.trim();
   const status = $('#ordersStatus').value.trim();
-  if (!acc) return show($('#outOrders'), { error: 'External Id requis' }, false);
+  if (!acc) return show($('#outOrders'), { error: 'Sfid requis' }, false);
   const params = new URLSearchParams();
   if (status) params.set('status', status);
   try {
@@ -283,8 +316,8 @@ $('#formPatchContact').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button[type="submit"]');
   const fd = new FormData(e.target);
-  const externalId = fd.get('externalId')?.trim();
-  if (!externalId) return show($('#outPatchContact'), { error: 'External Id requis' }, false);
+  const sfid = fd.get('sfid')?.trim();
+  if (!sfid) return show($('#outPatchContact'), { error: 'Sfid requis' }, false);
 
   const allowed = [
     'FirstName','LastName','Email','Phone','MobilePhone',
@@ -302,7 +335,7 @@ $('#formPatchContact').addEventListener('submit', async (e) => {
 
   await withButtonLoading(btn, async () => {
     try {
-      const r = await apiFetch(`/contact/${encodeURIComponent(externalId)}`, {
+      const r = await apiFetch(`/contact/${encodeURIComponent(sfid)}`, {
         method: 'PATCH',
         body: JSON.stringify(body)
       });
@@ -319,8 +352,8 @@ $('#formPatchAccount').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button[type="submit"]');
   const fd = new FormData(e.target);
-  const externalId = fd.get('externalId')?.trim();
-  if (!externalId) return show($('#outPatchAccount'), { error: 'External Id requis' }, false);
+  const sfid = fd.get('sfid')?.trim();
+  if (!sfid) return show($('#outPatchAccount'), { error: 'Sfid requis' }, false);
 
   const allowed = ['Name','Phone','BillingStreet','BillingCity','BillingPostalCode','BillingCountry','Active__c'];
   const body = {};
@@ -331,7 +364,7 @@ $('#formPatchAccount').addEventListener('submit', async (e) => {
 
   await withButtonLoading(btn, async () => {
     try {
-      const r = await apiFetch(`/account/${encodeURIComponent(externalId)}`, {
+      const r = await apiFetch(`/account/${encodeURIComponent(sfid)}`, {
         method: 'PATCH',
         body: JSON.stringify(body)
       });
@@ -351,8 +384,8 @@ $('#formContractCreate').addEventListener('submit', async (e) => {
   const body = Object.fromEntries(fd.entries());
   Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
 
-  if (!body.accountExternalId || !body.externalId) {
-    return show($('#outContractCreate'), { error: 'accountExternalId et externalId sont requis' }, false);
+  if (!body.accountSfid) {
+    return show($('#outContractCreate'), { error: 'accountSfid est requis' }, false);
   }
 
   await withButtonLoading(btn, async () => {
@@ -360,20 +393,37 @@ $('#formContractCreate').addEventListener('submit', async (e) => {
       const r = await apiFetch('/contract', { method: 'POST', body: JSON.stringify(body) });
       const json = await r.json().catch(() => ({}));
       show($('#outContractCreate'), { status: r.status, ...json, sent: body }, r.ok);
+      if (r.ok && json.contract?.id != null) $('#contractStatusId').value = json.contract.id;
     } catch (e2) {
       show($('#outContractCreate'), { error: e2.message }, false);
     }
   });
 });
 
-/* ================= PATCH /contract/:externalId ================= */
+/* ================= Contract sync status ================= */
+$('#btnContractStatus').addEventListener('click', () => withButtonLoading($('#btnContractStatus'), async () => {
+  const id = $('#contractStatusId').value.trim();
+  if (!id) return show($('#outContractStatus'), { error: 'Id requis' }, false);
+  try {
+    const r = await apiFetch(`/contract/${encodeURIComponent(id)}/status`);
+    const json = await r.json().catch(()=>({}));
+    show($('#outContractStatus'), { status: r.status, ...json }, r.ok && json.synced);
+    if (r.ok && json.sfid) {
+      const patchSfid = document.querySelector('#formContractPatch [name="sfid"]');
+      if (patchSfid) patchSfid.value = json.sfid;
+      $('#contractExtId').value = json.sfid;
+    }
+  } catch (e) { show($('#outContractStatus'), { error: e.message }, false); }
+}));
+
+/* ================= PATCH /contract/:sfid ================= */
 $('#formContractPatch').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button[type="submit"]');
   const fd = new FormData(e.target);
-  const externalId = (fd.get('externalId') || '').trim();
-  if (!externalId) {
-    return show($('#outContractPatch'), { error: 'External Id requis' }, false);
+  const sfid = (fd.get('sfid') || '').trim();
+  if (!sfid) {
+    return show($('#outContractPatch'), { error: 'Sfid requis' }, false);
   }
 
   const allowed = ['Status','StartDate','EndDate','ContractTerm','Description','SpecialTerms'];
@@ -390,7 +440,7 @@ $('#formContractPatch').addEventListener('submit', async (e) => {
 
   await withButtonLoading(btn, async () => {
     try {
-      const r = await apiFetch(`/contract/${encodeURIComponent(externalId)}`, {
+      const r = await apiFetch(`/contract/${encodeURIComponent(sfid)}`, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });

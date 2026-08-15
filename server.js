@@ -12,8 +12,25 @@ const port = process.env.PORT || 3000;
 /* ---------- middlewares ---------- */
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '512kb' }));
+// ALLOWED_ORIGINS peut contenir plusieurs origines séparées par des virgules :
+// Access-Control-Allow-Origin n'accepte qu'une seule valeur, donc on reflète
+// l'Origin de la requête si elle fait partie de la liste autorisée.
+const allowedOriginsRaw = (process.env.ALLOWED_ORIGINS || '*').trim();
+const allowedOrigins = allowedOriginsRaw
+  .split(',')
+  .map(o => o.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGINS || '*');
+  if (allowedOriginsRaw === '*') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else {
+    const origin = (req.get('Origin') || '').replace(/\/$/, '');
+    if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Email,X-Api-Key');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -60,23 +77,29 @@ const pick = (obj, allowed) => Object.fromEntries(
 );
 
 /* ======================= API ======================= */
+/*
+ * AXG_Account_Id__c / AXG_Contact_Id__c / AXG_Contract_Id__c sont des champs Auto-Number
+ * côté Salesforce : leur valeur est TOUJOURS générée par Salesforce, jamais par le client,
+ * même si le champ est marqué External ID (cf. README > Identifiants). Heroku Connect ne
+ * peut donc pas pousser une valeur fournie par le client dans ces colonnes — la ligne
+ * resterait bloquée en échec de synchronisation (_hc_lastop='FAILED', voir _hc_err).
+ * Ces routes n'écrivent donc plus dans axg_*_id__c et identifient les enregistrements par
+ * `sfid` (l'Id Salesforce réel, peuplé par Heroku Connect une fois la synchronisation
+ * terminée) ou par l'`id` interne Heroku Connect (disponible immédiatement, utile pour
+ * interroger le statut de synchronisation avant que `sfid` n'existe).
+ */
+
 /* POST /account — créer un Account sans contact */
 app.post('/account', requireApiKey, async (req, res) => {
   try {
-    const { name, externalId, phone, billingCity, active = true } = req.body || {};
-    if (!name || !externalId) return res.status(400).json({ error: 'name_and_externalId_required' });
-
-    const dup = await pool.query(
-      'SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1',
-      [externalId]
-    );
-    if (dup.rowCount) return res.status(409).json({ error: 'account_exists', sfid: dup.rows[0].sfid });
+    const { name, phone, billingCity, active = true } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'name_required' });
 
     const ins = await pool.query(
-      `INSERT INTO salesforce.account (name, axg_account_id__c, phone, billingcity, active__c)
-       VALUES ($1,$2,$3,$4,$5)
-       RETURNING sfid, name, axg_account_id__c, active__c`,
-      [name, externalId, phone || null, billingCity || null, !!active]
+      `INSERT INTO salesforce.account (name, phone, billingcity, active__c)
+       VALUES ($1,$2,$3,$4)
+       RETURNING id, sfid, name, active__c`,
+      [name, phone || null, billingCity || null, !!active]
     );
 
     res.status(201).json({ account: ins.rows[0], sync: 'pending' });
@@ -86,10 +109,29 @@ app.post('/account', requireApiKey, async (req, res) => {
   }
 });
 
-/* POST /register — créer un Contact (option : rattacher via Account External Id) */
+/* GET /account/:id/status — statut de synchronisation Heroku Connect (id interne HC) */
+app.get('/account/:id/status', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sfid, _hc_lastop AS last_op, _hc_err AS error
+       FROM salesforce.account WHERE id=$1 LIMIT 1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
+    const row = rows[0];
+    res.json({ ...row, synced: !!row.sfid });
+  } catch (e) {
+    console.error('GET /account/:id/status error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/* POST /register — créer un Contact (option : rattacher via l'Id Salesforce réel du compte) */
 app.post('/register', requireApiKey, async (req, res) => {
   try {
-    const { firstName, lastName, email, mobile, accountExternalId } = req.body || {};
+    const { firstName, lastName, email, mobile, accountSfid } = req.body || {};
     if (!isEmail(email)) return res.status(400).json({ error: 'invalid_email' });
 
     const dup = await pool.query(
@@ -100,18 +142,19 @@ app.post('/register', requireApiKey, async (req, res) => {
     if (dup.rowCount) return res.status(409).json({ error: 'email_exists', sfid: dup.rows[0].sfid });
 
     let accountId = null;
-    if (accountExternalId) {
+    if (accountSfid) {
       const acc = await pool.query(
-        `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
-        [accountExternalId]
+        `SELECT sfid FROM salesforce.account WHERE sfid=$1 LIMIT 1`,
+        [accountSfid]
       );
-      accountId = acc.rows[0]?.sfid || null;
+      if (!acc.rowCount) return res.status(404).json({ error: 'account_not_found' });
+      accountId = acc.rows[0].sfid;
     }
 
     const ins = await pool.query(
       `INSERT INTO salesforce.contact (firstname, lastname, email, mobilephone, active__c, accountid)
        VALUES ($1,$2,$3,$4,true,$5)
-       RETURNING sfid, firstname, lastname, email, accountid`,
+       RETURNING id, sfid, firstname, lastname, email, accountid`,
       [firstName || null, lastName || null, email, mobile || null, accountId]
     );
 
@@ -122,10 +165,29 @@ app.post('/register', requireApiKey, async (req, res) => {
   }
 });
 
-/* PATCH /contact/:externalId — mise à jour partielle d’un Contact (AXG_Contact_Id__c) */
-app.patch('/contact/:externalId', requireApiKey, async (req, res) => {
-  const { externalId } = req.params;
-  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+/* GET /contact/:id/status — statut de synchronisation Heroku Connect (id interne HC) */
+app.get('/contact/:id/status', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sfid, _hc_lastop AS last_op, _hc_err AS error
+       FROM salesforce.contact WHERE id=$1 LIMIT 1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'contact_not_found' });
+    const row = rows[0];
+    res.json({ ...row, synced: !!row.sfid });
+  } catch (e) {
+    console.error('GET /contact/:id/status error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+/* PATCH /contact/:sfid — mise à jour partielle d’un Contact (Id Salesforce réel) */
+app.patch('/contact/:sfid', requireApiKey, async (req, res) => {
+  const { sfid } = req.params;
+  if (!sfid) return res.status(400).json({ error: 'missing_sfid' });
 
   const allowed = [
     'FirstName','LastName','Email','Phone','MobilePhone',
@@ -146,13 +208,13 @@ app.patch('/contact/:externalId', requireApiKey, async (req, res) => {
   Object.entries(body).forEach(([api, val]) => { params.push(val); sets.push(`${mapCol[api]}=$${params.length}`); });
   if (!sets.length) return res.status(400).json({ error: 'no_updatable_fields' });
 
-  params.push(externalId);
+  params.push(sfid);
   const sql = `
     UPDATE salesforce.contact
        SET ${sets.join(', ')},
            systemmodstamp = systemmodstamp
-     WHERE axg_contact_id__c = $${params.length}
-     RETURNING sfid, axg_contact_id__c, firstname, lastname, email, phone, mobilephone, mailingcity, active__c, accountid
+     WHERE sfid = $${params.length}
+     RETURNING sfid, firstname, lastname, email, phone, mobilephone, mailingcity, active__c, accountid
   `;
   try {
     const r = await pool.query(sql, params);
@@ -164,10 +226,10 @@ app.patch('/contact/:externalId', requireApiKey, async (req, res) => {
   }
 });
 
-/* PATCH /account/:externalId — mise à jour partielle d’un Account (AXG_Account_Id__c) */
-app.patch('/account/:externalId', requireApiKey, async (req, res) => {
-  const { externalId } = req.params;
-  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+/* PATCH /account/:sfid — mise à jour partielle d’un Account (Id Salesforce réel) */
+app.patch('/account/:sfid', requireApiKey, async (req, res) => {
+  const { sfid } = req.params;
+  if (!sfid) return res.status(400).json({ error: 'missing_sfid' });
 
   const allowed = [
     'Name','Phone','Website','Industry','NumberOfEmployees',
@@ -189,13 +251,13 @@ app.patch('/account/:externalId', requireApiKey, async (req, res) => {
   const sets = [], params = [];
   Object.entries(body).forEach(([api, val]) => { params.push(val); sets.push(`${mapCol[api]}=$${params.length}`); });
 
-  params.push(externalId);
+  params.push(sfid);
   const sql = `
     UPDATE salesforce.account
        SET ${sets.join(', ')},
            systemmodstamp = systemmodstamp
-     WHERE axg_account_id__c = $${params.length}
-     RETURNING sfid, axg_account_id__c, name, phone, website, industry,
+     WHERE sfid = $${params.length}
+     RETURNING sfid, name, phone, website, industry,
                numberofemployees, active__c
   `;
   try {
@@ -211,33 +273,26 @@ app.patch('/account/:externalId', requireApiKey, async (req, res) => {
 // ---------- POST /contract ----------
 app.post('/contract', requireApiKey, async (req, res) => {
   try {
-    const { accountExternalId, externalId, startDate, endDate, status } = req.body || {};
+    const { accountSfid, startDate, endDate, status } = req.body || {};
 
-    if (!accountExternalId || !externalId) {
-      return res.status(400).json({ error: 'accountExternalId_and_externalId_required' });
+    if (!accountSfid) {
+      return res.status(400).json({ error: 'accountSfid_required' });
     }
 
-    // 1) Vérifier si l’Account existe
+    // 1) Vérifier si l’Account existe (et donc qu'il a bien fini de synchroniser vers Salesforce)
     const acc = await pool.query(
-      `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
-      [accountExternalId]
+      `SELECT sfid FROM salesforce.account WHERE sfid=$1 LIMIT 1`,
+      [accountSfid]
     );
     const accountId = acc.rows[0]?.sfid;
     if (!accountId) return res.status(404).json({ error: 'account_not_found' });
 
-    // 2) Vérifier doublon externalId
-    const dup = await pool.query(
-      `SELECT sfid FROM salesforce.contract WHERE axg_contract_id__c=$1 LIMIT 1`,
-      [externalId]
-    );
-    if (dup.rowCount) return res.status(409).json({ error: 'contract_exists', sfid: dup.rows[0].sfid });
-
-    // 3) Insert
+    // 2) Insert
     const ins = await pool.query(
-      `INSERT INTO salesforce.contract (axg_contract_id__c, accountid, startdate, enddate, status)
-       VALUES ($1,$2,$3,$4,$5)
-       RETURNING sfid, axg_contract_id__c, contractnumber, status, startdate, enddate, accountid`,
-      [externalId, accountId, startDate || null, endDate || null, status || 'Draft']
+      `INSERT INTO salesforce.contract (accountid, startdate, enddate, status)
+       VALUES ($1,$2,$3,$4)
+       RETURNING id, sfid, contractnumber, status, startdate, enddate, accountid`,
+      [accountId, startDate || null, endDate || null, status || 'Draft']
     );
 
     res.status(201).json({ contract: ins.rows[0], sync: 'pending' });
@@ -247,10 +302,29 @@ app.post('/contract', requireApiKey, async (req, res) => {
   }
 });
 
-// ---------- PATCH /contract/:externalId ----------
-app.patch('/contract/:externalId', requireApiKey, async (req, res) => {
-  const { externalId } = req.params;
-  if (!externalId) return res.status(400).json({ error: 'missing_external_id' });
+/* GET /contract/:id/status — statut de synchronisation Heroku Connect (id interne HC) */
+app.get('/contract/:id/status', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, sfid, _hc_lastop AS last_op, _hc_err AS error
+       FROM salesforce.contract WHERE id=$1 LIMIT 1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'contract_not_found' });
+    const row = rows[0];
+    res.json({ ...row, synced: !!row.sfid });
+  } catch (e) {
+    console.error('GET /contract/:id/status error:', e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// ---------- PATCH /contract/:sfid ----------
+app.patch('/contract/:sfid', requireApiKey, async (req, res) => {
+  const { sfid } = req.params;
+  if (!sfid) return res.status(400).json({ error: 'missing_sfid' });
 
   // Champs autorisés
   const allowed = ['Status', 'StartDate', 'EndDate', 'ContractTerm', 'Description', 'SpecialTerms'];
@@ -273,12 +347,12 @@ app.patch('/contract/:externalId', requireApiKey, async (req, res) => {
   }
   if (!sets.length) return res.status(400).json({ error: 'no_updatable_fields' });
 
-  params.push(externalId);
+  params.push(sfid);
   const sql = `
     UPDATE salesforce.contract
        SET ${sets.join(', ')}, systemmodstamp = systemmodstamp
-     WHERE axg_contract_id__c = $${params.length}
-     RETURNING sfid, axg_contract_id__c, contractnumber, status, startdate, enddate
+     WHERE sfid = $${params.length}
+     RETURNING sfid, contractnumber, status, startdate, enddate
   `;
 
   try {
@@ -297,7 +371,7 @@ app.get('/contact/:email', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email);
     const { rows } = await pool.query(`
-      SELECT sfid, firstname, lastname, email, active__c, axg_contact_id__c
+      SELECT sfid, firstname, lastname, email, active__c
       FROM salesforce.contact
       WHERE lower(email)=lower($1) AND (isdeleted=false OR isdeleted IS NULL)
       ORDER BY systemmodstamp DESC
@@ -311,15 +385,15 @@ app.get('/contact/:email', async (req, res) => {
   }
 });
 
-app.get('/account/:externalId/contacts', async (req, res) => {
-  const { externalId } = req.params;
+app.get('/account/:sfid/contacts', async (req, res) => {
+  const { sfid } = req.params;
   const { active } = req.query;
   try {
-    const params = [externalId];
-    let where = `a.axg_account_id__c = $1`;
+    const params = [sfid];
+    let where = `a.sfid = $1`;
     if (active === 'true' || active === 'false') { params.push(active === 'true'); where += ` AND c.active__c = $${params.length}`; }
     const { rows } = await pool.query(`
-      SELECT c.sfid, c.firstname, c.lastname, c.email, c.active__c, c.axg_contact_id__c
+      SELECT c.sfid, c.firstname, c.lastname, c.email, c.active__c
       FROM salesforce.contact c
       JOIN salesforce.account a ON c.accountid = a.sfid
       WHERE ${where}
@@ -332,16 +406,16 @@ app.get('/account/:externalId/contacts', async (req, res) => {
   }
 });
 
-app.get('/contract/:axgContractId', async (req, res) => {
-  const { axgContractId } = req.params;
+app.get('/contract/:sfid', async (req, res) => {
+  const { sfid } = req.params;
   try {
     const { rows } = await pool.query(`
-      SELECT sfid, axg_contract_id__c AS axg_contract_id, contractnumber,
+      SELECT sfid, contractnumber,
              accountid, status, startdate, enddate, activateddate
       FROM salesforce."contract"
-      WHERE axg_contract_id__c = $1
+      WHERE sfid = $1
       LIMIT 1
-    `, [axgContractId]);
+    `, [sfid]);
     if (!rows.length) return res.status(404).json({ error: 'Contract not found' });
     res.json(rows[0]);
   } catch (e) {
@@ -387,13 +461,13 @@ app.get('/products', async (req, res) => {
   }
 });
 
-app.get('/orders/:accountExternalId', async (req, res) => {
-  const { accountExternalId } = req.params;
+app.get('/orders/:accountSfid', async (req, res) => {
+  const { accountSfid } = req.params;
   const { status, limit = 50, offset = 0 } = req.query;
   try {
     const acc = await pool.query(
-      `SELECT sfid FROM salesforce.account WHERE axg_account_id__c=$1 LIMIT 1`,
-      [accountExternalId]
+      `SELECT sfid FROM salesforce.account WHERE sfid=$1 LIMIT 1`,
+      [accountSfid]
     );
     const accountId = acc.rows[0]?.sfid;
     if (!accountId) return res.status(404).json({ error: 'account_not_found' });
