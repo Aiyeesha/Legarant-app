@@ -1,0 +1,414 @@
+{
+  "info": {
+    "_postman_id": "b6b6f8b0-2f2a-4f6e-9c9a-socmob-heroku-api",
+    "name": "LEGARANT SOCMOB – API Heroku (apiret)",
+    "description": "# LEGARANT SOCMOB – API Heroku\n\n## Objectif\n\nCette collection teste l'API REST maison exposée par l'app Heroku `Legarant-mobile-socmob` (fichier `server.js`), qui lit/écrit dans la base Postgres synchronisée par Heroku Connect (miroir des objets Salesforce Account/Contact/Contract/Order/Product2).\n\nElle est complémentaire à la collection **LEGARANT Connected app**, qui appelle directement l'API REST Salesforce via OAuth2 (Connected App). Ici, on ne parle jamais directement à Salesforce : on parle à l'app Heroku, qui elle-même lit la base répliquée.\n\n## Variables d'environnement\n\n| Variable | Description |\n| --- | --- |\n| `base_url` | URL de base de l'app (ex: `https://<app>.herokuapp.com` ou `http://localhost:3000` en local) |\n| `axgAccountId` | External Id Account utilisé pour les tests (AXG_Account_Id__c) |\n| `axgContactId` | External Id Contact utilisé pour les tests (AXG_Contact_Id__c) |\n| `axgContractId` | External Id Contract utilisé pour les tests (AXG_Contract_Id__c) |\n| `contactEmail` | Email utilisé pour créer/rechercher un contact |\n| `pricebookName` | Nom du Pricebook utilisé pour filtrer le catalogue |\n\n## Séquence de test recommandée\n\n1. `Health – GET /health`\n2. `Accounts > Créer un compte` → note le statut (201 = créé, 409 = existe déjà)\n3. `Accounts > Modifier un compte`\n4. `Contacts > Auto-inscription` (rattaché au compte via `accountExternalId`)\n5. `Contacts > Modifier un contact`\n6. `Contacts > Contacts d'un compte`\n7. `Contracts > Créer un contrat`\n8. `Contracts > Modifier un contrat`\n9. `Contracts > Récupérer un contrat`\n10. `Catalogue > Rechercher des produits`\n11. `Commandes > Lister les commandes d'un compte`\n\n## Notes\n\n- Cette API ne fait **aucune** vérification OAuth : elle est protégée uniquement au niveau réseau/CORS (voir `ALLOWED_ORIGINS` côté Heroku). Ne pas exposer cette collection avec une base_url de prod sans restriction d'accès.\n- Les créations sont idempotentes par External Id : un doublon renvoie `409 { error: 'account_exists' | 'email_exists' | 'contract_exists' }`.\n- Les écritures alimentent la base Heroku Connect ; la remontée vers Salesforce se fait de façon asynchrone via Heroku Connect (`sync: 'pending'` dans la réponse), pas en synchrone dans l'appel.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('base_url')) {",
+          "  throw new Error('Variable manquante: base_url (ex: http://localhost:3000)');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Réponse JSON ou texte reçue', () => {",
+          "  pm.expect(pm.response.code).to.be.a('number');",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "axgAccountId", "value": "AXG-ACCT-90001" },
+    { "key": "axgContactId", "value": "AXG-C-90001" },
+    { "key": "axgContractId", "value": "AXG-CTR-90001" },
+    { "key": "contactEmail", "value": "test.socmob@example.de" },
+    { "key": "pricebookName", "value": "Standard Price Book" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK et corps = OK', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.text()).to.eql('OK');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Créer un compte (POST /account)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 créé ou 409 déjà existant', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.environment.set('axgAccountId', body.account.axg_account_id__c);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"AXG SOCMOB Test GmbH\",\n  \"externalId\": \"{{axgAccountId}}\",\n  \"phone\": \"+49 30 555000\",\n  \"billingCity\": \"Berlin\",\n  \"active\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/account", "host": ["{{base_url}}"], "path": ["account"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un compte (PATCH /account/:externalId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si compte inconnu', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"Phone\": \"+49 30 555111\", \"BillingCity\": \"Hamburg\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/account/{{axgAccountId}}",
+              "host": ["{{base_url}}"],
+              "path": ["account", "{{axgAccountId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Contacts d'un compte (GET /account/:externalId/contacts)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK et tableau', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/account/{{axgAccountId}}/contacts?active=true",
+              "host": ["{{base_url}}"],
+              "path": ["account", "{{axgAccountId}}", "contacts"],
+              "query": [{ "key": "active", "value": "true" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contacts",
+      "item": [
+        {
+          "name": "Auto-inscription (POST /register)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 créé ou 409 email déjà utilisé', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.environment.set('axgContactId', body.contact.sfid);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"SOCMOB\",\n  \"lastName\": \"Test\",\n  \"email\": \"{{contactEmail}}\",\n  \"mobile\": \"+49 170 0000000\",\n  \"accountExternalId\": \"{{axgAccountId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/register", "host": ["{{base_url}}"], "path": ["register"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un contact (PATCH /contact/:externalId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si contact inconnu', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"Phone\": \"+49 170 1112223\", \"Active__c\": true }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/contact/{{axgContactId}}",
+              "host": ["{{base_url}}"],
+              "path": ["contact", "{{axgContactId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Recherche par email (GET /contact/:email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si introuvable', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contact/{{contactEmail}}",
+              "host": ["{{base_url}}"],
+              "path": ["contact", "{{contactEmail}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contracts",
+      "item": [
+        {
+          "name": "Créer un contrat (POST /contract)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 créé, 404 compte inconnu ou 409 déjà existant', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 404, 409]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountExternalId\": \"{{axgAccountId}}\",\n  \"externalId\": \"{{axgContractId}}\",\n  \"startDate\": \"2026-01-01\",\n  \"status\": \"Draft\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/contract", "host": ["{{base_url}}"], "path": ["contract"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Modifier un contrat (PATCH /contract/:externalId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si contrat inconnu', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"Status\": \"Activated\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/contract/{{axgContractId}}",
+              "host": ["{{base_url}}"],
+              "path": ["contract", "{{axgContractId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Récupérer un contrat (GET /contract/:axgContractId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si introuvable', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contract/{{axgContractId}}",
+              "host": ["{{base_url}}"],
+              "path": ["contract", "{{axgContractId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Catalogue",
+      "item": [
+        {
+          "name": "Rechercher des produits (GET /products)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK et items = tableau', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().items).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/products?pricebookName={{pricebookName}}&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "pricebookName", "value": "{{pricebookName}}" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Commandes",
+      "item": [
+        {
+          "name": "Lister les commandes d'un compte (GET /orders/:accountExternalId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK ou 404 si compte inconnu', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders/{{axgAccountId}}",
+              "host": ["{{base_url}}"],
+              "path": ["orders", "{{axgAccountId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

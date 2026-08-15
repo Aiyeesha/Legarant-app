@@ -7,108 +7,313 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <img src="./assets/logo.png" alt="LEGARANT" class="logo" />
-    <h1>SOCMOB Console</h1>
-  </header>
-
-  <main class="container">
-    <section class="card">
-      <h2>Healthcheck</h2>
-      <button id="btnHealth">Tester l’API</button>
-      <pre id="outHealth" class="out"></pre>
-    </section>
-
-    <section class="card">
-      <h2>Créer un Compte (POST /account)</h2>
-      <form id="formAccount">
-        <div class="grid">
-          <label>Account Name <input name="name" required /></label>
-          <label>External Id <input name="externalId" required placeholder="AXG-ACCT-10001" /></label>
-          <label>Téléphone <input name="phone" /></label>
-          <label>Billing City <input name="billingCity" /></label>
-          <label style="grid-column:1/-1">
-            <input type="checkbox" name="active" checked /> Actif
-          </label>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="./assets/logo.png" alt="LEGARANT" class="logo" />
+        <div>
+          <strong>LEGARANT</strong>
+          <span>SOCMOB Console</span>
         </div>
-        <button type="submit">Créer l’Account</button>
-      </form>
-      <pre id="outAccount" class="out"></pre>
-    </section>
-
-    <section class="card">
-      <h2>Auto-inscription (POST /register)</h2>
-      <form id="formRegister">
-        <div class="grid">
-          <label>First Name <input name="firstName" required /></label>
-          <label>Last Name <input name="lastName" required /></label>
-          <label>Email <input type="email" name="email" required /></label>
-          <label>Mobile <input name="mobile" /></label>
-          <label>Account External Id (optionnel)
-            <input name="accountExternalId" placeholder="AXG-ACCT-10001" />
-          </label>
-        </div>
-        <button type="submit">Créer le contact</button>
-      </form>
-      <pre id="outRegister" class="out"></pre>
-    </section>
-
-    <section class="card">
-      <h2>Contact par email (GET /contact/:email)</h2>
-      <div class="row">
-        <input id="emailLookup" type="email" placeholder="anna@example.de" />
-        <button id="btnLookup">Rechercher</button>
       </div>
-      <pre id="outLookup" class="out"></pre>
-    </section>
 
-    <section class="card">
-      <h2>Contacts d’un compte (GET /account/:extId/contacts)</h2>
-      <div class="row">
-        <input id="accExtId" placeholder="AXG-ACCT-10001" />
-        <select id="accActive">
-          <option value="">— tous —</option>
-          <option value="true">Actifs</option>
-          <option value="false">Inactifs</option>
-        </select>
-        <button id="btnAccContacts">Lister</button>
+      <nav class="nav" id="nav">
+        <button class="navlink active" data-view="health">
+          <span class="ico">●</span> Santé API
+        </button>
+        <button class="navlink" data-view="accounts">
+          <span class="ico">🏢</span> Comptes
+        </button>
+        <button class="navlink" data-view="contacts">
+          <span class="ico">👤</span> Contacts
+        </button>
+        <button class="navlink" data-view="contracts">
+          <span class="ico">📄</span> Contrats
+        </button>
+        <button class="navlink" data-view="catalog">
+          <span class="ico">📦</span> Catalogue
+        </button>
+        <button class="navlink" data-view="orders">
+          <span class="ico">🧾</span> Commandes
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <small>© LEGARANT – SOCMOB (Heroku)</small>
       </div>
-      <pre id="outAccContacts" class="out"></pre>
-    </section>
+    </aside>
 
-    <section class="card">
-      <h2>Contrat par External Id (GET /contract/:axgContractId)</h2>
-      <div class="row">
-        <input id="contractExtId" placeholder="AXG-CTR-70001" />
-        <button id="btnContract">Rechercher</button>
-      </div>
-      <pre id="outContract" class="out"></pre>
-    </section>
+    <div class="overlay" id="overlay"></div>
 
-    <section class="card">
-      <h2>Catalogue produits (GET /products)</h2>
-      <div class="row">
-        <input id="qProducts" placeholder="Recherche (nom/code)..." />
-        <input id="pbName" placeholder="Pricebook name (ex: Standard Price Book)" />
-        <button id="btnProducts">Chercher</button>
-      </div>
-      <pre id="outProducts" class="out"></pre>
-    </section>
+    <div class="main">
+      <header class="topbar">
+        <button class="menu-toggle" id="menuToggle" aria-label="Ouvrir le menu">☰</button>
+        <h1 id="viewTitle">Santé API</h1>
+        <span class="badge" id="apiBadge">API —</span>
+      </header>
 
-    <section class="card">
-      <h2>Commandes (GET /orders/:accountExternalId)</h2>
-      <div class="row">
-        <input id="ordersAccExtId" placeholder="AXG-ACCT-10001" />
-        <input id="ordersStatus" placeholder="Status (ex: Activated)" />
-        <button id="btnOrders">Lister</button>
-      </div>
-      <pre id="outOrders" class="out"></pre>
-    </section>
-  </main>
+      <main class="content">
 
-  <footer class="footer">
-    <small>© LEGARANT – Démo SOCMOB (Heroku)</small>
-  </footer>
+        <!-- ================= SANTÉ ================= -->
+        <section class="view" id="view-health">
+          <div class="card">
+            <h2>Healthcheck</h2>
+            <p class="hint">Vérifie que le service Heroku répond.</p>
+            <button id="btnHealth">Tester l’API</button>
+            <pre id="outHealth" class="out"></pre>
+          </div>
+        </section>
+
+        <!-- ================= COMPTES ================= -->
+        <section class="view" id="view-accounts" hidden>
+
+          <div class="card">
+            <h2>Créer un compte</h2>
+            <p class="hint">POST /account</p>
+            <form id="formAccount">
+              <div class="grid">
+                <label>Account Name <input name="name" required /></label>
+                <label>External Id <input name="externalId" required placeholder="AXG-ACCT-10001" /></label>
+                <label>Téléphone <input name="phone" /></label>
+                <label>Billing City <input name="billingCity" /></label>
+                <label class="checkline">
+                  <input type="checkbox" name="active" checked /> Actif
+                </label>
+              </div>
+              <button type="submit">Créer le compte</button>
+            </form>
+            <pre id="outAccount" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Modifier un compte</h2>
+            <p class="hint">PATCH /account/:externalId</p>
+            <form id="formPatchAccount">
+              <div class="grid">
+                <label>External Id (AXG_Account_Id__c)
+                  <input name="externalId" placeholder="AXG-ACCT-10001" required />
+                </label>
+                <label>Name <input name="Name" /></label>
+                <label>Phone <input name="Phone" /></label>
+                <label>BillingStreet <input name="BillingStreet" /></label>
+                <label>BillingCity <input name="BillingCity" /></label>
+                <label>BillingPostalCode <input name="BillingPostalCode" /></label>
+                <label>BillingCountry <input name="BillingCountry" /></label>
+                <label>Active__c
+                  <select name="Active__c">
+                    <option value="">— inchangé —</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Mettre à jour le compte</button>
+            </form>
+            <pre id="outPatchAccount" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Contacts d’un compte</h2>
+            <p class="hint">GET /account/:externalId/contacts</p>
+            <div class="row">
+              <input id="accExtId" placeholder="AXG-ACCT-10001" />
+              <select id="accActive">
+                <option value="">— tous —</option>
+                <option value="true">Actifs</option>
+                <option value="false">Inactifs</option>
+              </select>
+              <button id="btnAccContacts">Lister</button>
+            </div>
+            <div id="tblAccContacts" class="table-wrap"></div>
+            <details class="raw">
+              <summary>JSON brut</summary>
+              <pre id="outAccContacts" class="out"></pre>
+            </details>
+          </div>
+
+        </section>
+
+        <!-- ================= CONTACTS ================= -->
+        <section class="view" id="view-contacts" hidden>
+
+          <div class="card">
+            <h2>Auto-inscription</h2>
+            <p class="hint">POST /register</p>
+            <form id="formRegister">
+              <div class="grid">
+                <label>First Name <input name="firstName" required /></label>
+                <label>Last Name <input name="lastName" required /></label>
+                <label>Email <input type="email" name="email" required /></label>
+                <label>Mobile <input name="mobile" /></label>
+                <label>Account External Id (optionnel)
+                  <input name="accountExternalId" placeholder="AXG-ACCT-10001" />
+                </label>
+              </div>
+              <button type="submit">Créer le contact</button>
+            </form>
+            <pre id="outRegister" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Modifier un contact</h2>
+            <p class="hint">PATCH /contact/:externalId</p>
+            <form id="formPatchContact">
+              <div class="grid">
+                <label>External Id (AXG_Contact_Id__c)
+                  <input name="externalId" placeholder="AXG-000001" required />
+                </label>
+                <label>FirstName <input name="FirstName" /></label>
+                <label>LastName <input name="LastName" /></label>
+                <label>Email <input type="email" name="Email" /></label>
+                <label>Phone <input name="Phone" /></label>
+                <label>MobilePhone <input name="MobilePhone" /></label>
+                <label>MailingStreet <input name="MailingStreet" /></label>
+                <label>MailingCity <input name="MailingCity" /></label>
+                <label>MailingPostalCode <input name="MailingPostalCode" /></label>
+                <label>MailingCountry <input name="MailingCountry" /></label>
+                <label>Title <input name="Title" /></label>
+                <label>Department <input name="Department" /></label>
+                <label>Active__c
+                  <select name="Active__c">
+                    <option value="">— inchangé —</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Mettre à jour le contact</button>
+            </form>
+            <pre id="outPatchContact" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Recherche par email</h2>
+            <p class="hint">GET /contact/:email</p>
+            <div class="row">
+              <input id="emailLookup" type="email" placeholder="anna@example.de" />
+              <button id="btnLookup">Rechercher</button>
+            </div>
+            <pre id="outLookup" class="out"></pre>
+          </div>
+
+        </section>
+
+        <!-- ================= CONTRATS ================= -->
+        <section class="view" id="view-contracts" hidden>
+
+          <div class="card">
+            <h2>Créer un contrat</h2>
+            <p class="hint">POST /contract</p>
+            <form id="formContractCreate">
+              <div class="grid">
+                <label>Account External Id
+                  <input name="accountExternalId" placeholder="AXG-ACCT-10001" required />
+                </label>
+                <label>Contract External Id
+                  <input name="externalId" placeholder="AXG-CTR-70001" required />
+                </label>
+                <label>Start Date <input type="date" name="startDate" /></label>
+                <label>End Date <input type="date" name="endDate" /></label>
+                <label>Status
+                  <select name="status">
+                    <option value="">(par défaut: Draft)</option>
+                    <option>Draft</option>
+                    <option>In Approval</option>
+                    <option>Activated</option>
+                    <option>Expired</option>
+                    <option>Cancelled</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit">Créer le contrat</button>
+            </form>
+            <pre id="outContractCreate" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Modifier un contrat</h2>
+            <p class="hint">PATCH /contract/:externalId</p>
+            <form id="formContractPatch">
+              <div class="grid">
+                <label>Contract External Id (AXG_Contract_Id__c)
+                  <input name="externalId" placeholder="AXG-CTR-70001" required />
+                </label>
+                <label>Status
+                  <select name="Status">
+                    <option value="">— inchangé —</option>
+                    <option>Draft</option>
+                    <option>In Approval</option>
+                    <option>Activated</option>
+                    <option>Expired</option>
+                    <option>Cancelled</option>
+                  </select>
+                </label>
+                <label>StartDate <input type="date" name="StartDate" /></label>
+                <label>EndDate <input type="date" name="EndDate" /></label>
+                <label>ContractTerm (mois) <input type="number" name="ContractTerm" min="0" step="1" /></label>
+                <label class="span2">Description
+                  <textarea name="Description" rows="3" placeholder="Notes / description commerciale…"></textarea>
+                </label>
+                <label class="span2">SpecialTerms
+                  <textarea name="SpecialTerms" rows="3" placeholder="Conditions particulières…"></textarea>
+                </label>
+              </div>
+              <button type="submit">Mettre à jour le contrat</button>
+            </form>
+            <pre id="outContractPatch" class="out"></pre>
+          </div>
+
+          <div class="card">
+            <h2>Recherche par External Id</h2>
+            <p class="hint">GET /contract/:axgContractId</p>
+            <div class="row">
+              <input id="contractExtId" placeholder="AXG-CTR-70001" />
+              <button id="btnContract">Rechercher</button>
+            </div>
+            <pre id="outContract" class="out"></pre>
+          </div>
+
+        </section>
+
+        <!-- ================= CATALOGUE ================= -->
+        <section class="view" id="view-catalog" hidden>
+          <div class="card">
+            <h2>Catalogue produits</h2>
+            <p class="hint">GET /products</p>
+            <div class="row">
+              <input id="qProducts" placeholder="Recherche (nom/code)..." />
+              <input id="pbName" placeholder="Pricebook name (ex: Standard Price Book)" />
+              <button id="btnProducts">Chercher</button>
+            </div>
+            <div id="tblProducts" class="table-wrap"></div>
+            <details class="raw">
+              <summary>JSON brut</summary>
+              <pre id="outProducts" class="out"></pre>
+            </details>
+          </div>
+        </section>
+
+        <!-- ================= COMMANDES ================= -->
+        <section class="view" id="view-orders" hidden>
+          <div class="card">
+            <h2>Commandes</h2>
+            <p class="hint">GET /orders/:accountExternalId</p>
+            <div class="row">
+              <input id="ordersAccExtId" placeholder="AXG-ACCT-10001" />
+              <input id="ordersStatus" placeholder="Status (ex: Activated)" />
+              <button id="btnOrders">Lister</button>
+            </div>
+            <div id="tblOrders" class="table-wrap"></div>
+            <details class="raw">
+              <summary>JSON brut</summary>
+              <pre id="outOrders" class="out"></pre>
+            </details>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
 
   <script src="./app.js"></script>
 </body>
